@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 
+// Cliente OpenAI
 import { openai } from "./src/config/openaiClient.mjs";
 
 // Rutas por módulo
@@ -11,6 +12,7 @@ import { registerComunicaRoutes } from "./src/modules/comunicaRoutes.mjs";
 import { registerVentasRoutes } from "./src/modules/ventasRoutes.mjs";
 import { registerErpevRoutes } from "./src/modules/erpevRoutes.mjs";
 import { registerDemoRoutes } from "./src/modules/demoWelcomeRoutes.mjs";
+import { registerVoiceRoutes } from "./src/modules/voiceRoutes.mjs";
 
 dotenv.config();
 
@@ -25,14 +27,25 @@ app.get("/", (req, res) => {
   res.send("Esteborg backend modular está vivo ✅");
 });
 
-// Registrar módulos
+// Registrar módulos principales
 registerEsteborgFullRoutes(app, openai);
 registerComunicaRoutes(app, openai);
 registerVentasRoutes(app, openai);
 registerErpevRoutes(app, openai);
 registerDemoRoutes(app, openai);
 
-// Escuchar
+// Rutas de voz (ElevenLabs)
+registerVoiceRoutes(app);
+
+// 404 genérico por si alguien pega a una ruta que no existe
+app.use((req, res) => {
+  return res.status(404).json({
+    error: "not_found",
+    message: "Ruta no encontrada en el backend de Esteborg.",
+  });
+});
+
+// Arrancar servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Esteborg modular escuchando en puerto ${PORT}`);
 });
