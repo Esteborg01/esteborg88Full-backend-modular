@@ -1,21 +1,23 @@
+// src/modules/tokkenRoutes.mjs
+
 import { Router } from "express";
-// importa aquí lo que uses para generar el token:
-// import { generateTokkenForUser } from "../services/tokkenService.mjs";
+import { generateTokkenForUser } from "../utils/tokken.mjs";
 
 const router = Router();
 
+// Ruta real que usa el front Members: POST /generate-token
 router.post("/generate-token", async (req, res) => {
   try {
     const { email, personUid, accountUid } = req.body || {};
 
-    if (!email) {
-      return res.status(400).json({ error: "missing_email" });
+    if (!email || !personUid || !accountUid) {
+      return res.status(400).json({
+        error: "missing_fields",
+        message: "email, personUid y accountUid son requeridos",
+      });
     }
 
-    // TODO: aquí va tu lógica real de generación:
-    // const token = await generateTokkenForUser({ email, personUid, accountUid });
-
-    const token = "TOKKEN-DE-EJEMPLO-" + Date.now(); // reemplaza con lo real
+    const token = generateTokkenForUser({ email, personUid, accountUid });
 
     return res.json({ token });
   } catch (err) {
@@ -25,6 +27,6 @@ router.post("/generate-token", async (req, res) => {
 });
 
 export function registerTokkenRoutes(app) {
-  // Montamos la ruta exactamente como la espera el front:
-  app.use("/", router); // → POST /generate-token
+  // Montado en raíz, igual que el backend viejo:
+  app.use("/", router);
 }
