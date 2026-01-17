@@ -13,6 +13,7 @@ import { registerVentasRoutes } from "./src/modules/ventasRoutes.mjs";
 import { registerErpevRoutes } from "./src/modules/erpevRoutes.mjs";
 import { registerDemoRoutes } from "./src/modules/demoWelcomeRoutes.mjs";
 import { registerVoiceRoutes } from "./src/modules/voiceRoutes.mjs";
+import { registerTokkenRoutes } from "./src/modules/tokkenRoutes.mjs";
 
 dotenv.config();
 
@@ -33,6 +34,9 @@ registerComunicaRoutes(app, openai);
 registerVentasRoutes(app, openai);
 registerErpevRoutes(app, openai);
 registerDemoRoutes(app, openai);
+
+// Módulo Tokken Members (generate-token)
+registerTokkenRoutes(app);
 
 // Rutas de voz (ElevenLabs)
 registerVoiceRoutes(app);
