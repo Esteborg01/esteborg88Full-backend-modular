@@ -3,6 +3,13 @@
 const MAX_TOKEN_AGE_DAYS = 40;            // margen cómodo sobre tus 30 días
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;  // 5 minutos de diferencia de reloj
 
+// --- Helpers de encode/decode ---
+
+function encodeBase64Json(obj) {
+  const json = JSON.stringify(obj);
+  return Buffer.from(json, "utf8").toString("base64");
+}
+
 function decodeBase64Json(tokkenStr) {
   if (typeof tokkenStr !== "string") {
     throw new Error("Token debe ser string");
@@ -17,10 +24,37 @@ function decodeBase64Json(tokkenStr) {
     normalized += "=".repeat(4 - missing);
   }
 
-  const buf = Buffer.from(normalized, "base64");
-  const jsonStr = buf.toString("utf8");
+  const jsonStr = Buffer.from(normalized, "base64").toString("utf8");
   return JSON.parse(jsonStr);
 }
+
+// --- Generador: usado por tokkenRoutes.mjs ---
+
+export function generateTokkenForUser({
+  email,
+  personUid,
+  accountUid,
+  ts,
+} = {}) {
+  if (!email) {
+    throw new Error("generateTokkenForUser: email es requerido");
+  }
+
+  const payload = {
+    email,
+    // Estos pueden venir vacíos, igual que en validateTokken
+    ...(personUid ? { personUid } : {}),
+    ...(accountUid ? { accountUid } : {}),
+    ts: typeof ts === "number" ? ts : Date.now(),
+  };
+
+  const token = encodeBase64Json(payload);
+  console.log("generateTokkenForUser: payload ->", payload);
+
+  return token;
+}
+
+// --- Validador: usado por tu módulo /api/modules/comunica ---
 
 export function validateTokken(rawToken) {
   console.log("=== validateTokken() rawToken ===", rawToken);
@@ -51,7 +85,7 @@ export function validateTokken(rawToken) {
 
   const { email, ts } = payload;
 
-  // 🔹 AHORA solo exigimos email + ts
+  // 🔹 Solo exigimos email + ts
   if (!email || !ts) {
     console.warn("validateTokken: faltan campos requeridos", { email, ts });
     return {
@@ -74,7 +108,7 @@ export function validateTokken(rawToken) {
   const now = Date.now();
   const ageMs = now - tsMs;
 
-  // Muy en el futuro → algo anda mal con el reloj
+  // Muy en el futuro → problema de reloj
   if (ageMs < -MAX_CLOCK_SKEW_MS) {
     console.warn("validateTokken: ts está demasiado en el futuro", {
       tsMs,
@@ -100,7 +134,7 @@ export function validateTokken(rawToken) {
     };
   }
 
-  // 🔸 Estos warnings son suaves (no invalidan el token)
+  // 🔸 Warnings suaves (no invalidan)
   const softMissing = {};
   if (!payload.personUid) softMissing.personUid = payload.personUid;
   if (!payload.accountUid) softMissing.accountUid = payload.accountUid;
