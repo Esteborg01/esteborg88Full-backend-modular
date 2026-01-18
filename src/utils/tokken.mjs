@@ -4,17 +4,28 @@ const MAX_TOKEN_AGE_DAYS = 40;            // margen cómodo sobre tus 30 días
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;  // 5 minutos de diferencia de reloj
 
 function decodeBase64Json(tokkenStr) {
-  const padded = tokkenStr.padEnd(
-    Math.ceil(tokkenStr.length / 4) * 4,
-    "="
-  );
-  const jsonStr = Buffer.from(padded, "base64").toString("utf8");
+  if (typeof tokkenStr !== "string") {
+    throw new Error("Token debe ser string");
+  }
+
+  // Limpiamos espacios / saltos de línea
+  let normalized = tokkenStr.trim().replace(/\s+/g, "");
+
+  // Normalizamos padding para base64
+  const missing = normalized.length % 4;
+  if (missing) {
+    normalized += "=".repeat(4 - missing);
+  }
+
+  const buf = Buffer.from(normalized, "base64");
+  const jsonStr = buf.toString("utf8");
   return JSON.parse(jsonStr);
 }
 
 export function validateTokken(rawToken) {
   console.log("=== validateTokken() rawToken ===", rawToken);
 
+  // Token vacío
   if (!rawToken || typeof rawToken !== "string") {
     console.warn("validateTokken: token vacío o no string");
     return {
@@ -25,6 +36,7 @@ export function validateTokken(rawToken) {
   }
 
   let payload;
+
   try {
     payload = decodeBase64Json(rawToken);
     console.log("validateTokken: Base64 JSON OK:", payload);
@@ -32,7 +44,7 @@ export function validateTokken(rawToken) {
     console.error("❌ Error decodificando Tokken:", err);
     return {
       status: "invalid",
-      reason: "bad_base64",
+      reason: "bad_base64_or_json",
       tokenInfo: null,
     };
   }
@@ -62,6 +74,7 @@ export function validateTokken(rawToken) {
   const now = Date.now();
   const ageMs = now - tsMs;
 
+  // Muy en el futuro → algo anda mal con el reloj
   if (ageMs < -MAX_CLOCK_SKEW_MS) {
     console.warn("validateTokken: ts está demasiado en el futuro", {
       tsMs,
@@ -74,6 +87,7 @@ export function validateTokken(rawToken) {
     };
   }
 
+  // Expiración por días
   const maxAgeMs = MAX_TOKEN_AGE_DAYS * 24 * 60 * 60 * 1000;
   if (ageMs > maxAgeMs) {
     console.warn("validateTokken: token expirado", {
