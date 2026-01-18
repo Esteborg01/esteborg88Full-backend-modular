@@ -1,77 +1,97 @@
-// src/utils/tokken.mjs
+// =====================================================================================
+//  Esteborg — Token Utils (tokken.mjs FINAL)
+//  Compatible con:
+//    • Tokens Base64 JSON (formato Esteborg clásico)
+//    • JWT (Outseta access_token)
+// =====================================================================================
 
+/**
+ * =====================================================
+ *  VALIDAR TOKEN (NUEVO)
+ *  - Detecta formato
+ *  - Decodifica JSON Base64
+ *  - Decodifica JWT
+ *  - Valida campos requeridos
+ *  - Valida antigüedad (40 días)
+ * =====================================================
+ */
 export function validateTokken(rawToken) {
-  console.log("=== validateTokken rawToken ===", rawToken);
+  console.log("=== validateTokken() rawToken ===", rawToken);
 
   if (!rawToken || typeof rawToken !== "string") {
+    console.log("validateTokken: no rawToken");
     return { status: "invalid", reason: "missing_raw_token", tokenInfo: null };
   }
 
   let tokenInfo = null;
 
-  // 1) Intentar como JSON base64 (formato Esteborg clásico)
+  // -----------------------------------------------------
+  // 1) INTENTAR DECODIFICAR COMO JSON-BASE64 (Esteborg)
+  // -----------------------------------------------------
   try {
     const jsonStr = Buffer.from(rawToken, "base64").toString("utf8");
     tokenInfo = JSON.parse(jsonStr);
-    console.log("validateTokken: decoded JSON-base64:", tokenInfo);
+    console.log("validateTokken: Base64 JSON OK:", tokenInfo);
   } catch (err1) {
-    console.log(
-      "validateTokken: JSON-base64 falló, probando como JWT…",
-      err1.message
-    );
+    console.log("validateTokken: Base64 JSON falló → probando JWT…", err1.message);
 
-    // 2) Intentar como JWT (3 partes separadas por ".")
+    // -----------------------------------------------------
+    // 2) INTENTAR COMO JWT (Outseta access_token)
+    // -----------------------------------------------------
     try {
       const parts = rawToken.split(".");
       if (parts.length >= 2) {
-        const payloadB64 = parts[1]; // parte central
+        const payloadB64 = parts[1];
         const payloadJson = Buffer.from(payloadB64, "base64url").toString("utf8");
         tokenInfo = JSON.parse(payloadJson);
-        console.log("validateTokken: decoded JWT payload:", tokenInfo);
+        console.log("validateTokken: JWT OK:", tokenInfo);
       }
     } catch (err2) {
-      console.log("validateTokken: JWT decode también falló:", err2.message);
-      return {
-        status: "invalid",
-        reason: "decode_error",
-        tokenInfo: null,
-      };
+      console.log("validateTokken: JWT también falló:", err2.message);
+      return { status: "invalid", reason: "decode_error", tokenInfo: null };
     }
   }
 
   if (!tokenInfo) {
-    return { status: "invalid", reason: "empty_decoded", tokenInfo: null };
+    console.log("validateTokken: tokenInfo vacío");
+    return { status: "invalid", reason: "empty_tokeninfo", tokenInfo: null };
   }
 
-  // Normalizar campos principales
+  // Campos admitidos (Outseta y Esteborg)
   const {
-    email,
-    Email,
-    personUid,
-    PersonUid,
-    accountUid,
-    AccountUid,
-    ts,
+    email, Email,
+    personUid, PersonUid,
+    accountUid, AccountUid,
+    ts
   } = tokenInfo;
 
   const resolvedEmail = email || Email || "";
   const resolvedPersonUid = personUid || PersonUid || "";
   const resolvedAccountUid = accountUid || AccountUid || "";
 
+  // -----------------------------------------------------
+  // VALIDAR CAMPOS BÁSICOS
+  // -----------------------------------------------------
   if (!resolvedEmail || !resolvedPersonUid || !resolvedAccountUid) {
+    console.log("validateTokken: missing_claims", {
+      email: resolvedEmail, personUid: resolvedPersonUid, accountUid: resolvedAccountUid
+    });
+
     return {
       status: "invalid",
       reason: "missing_claims",
-      tokenInfo,
+      tokenInfo
     };
   }
 
-  // Manejo flexible de ts (segundos o milisegundos)
+  // -----------------------------------------------------
+  // VALIDAR ANTIGÜEDAD (ts en ms o segundos)
+  // -----------------------------------------------------
   const nowMs = Date.now();
   let tokenTsMs = null;
 
   if (typeof ts === "number") {
-    // si es muy grande (~ > año 2033 en segundos) asumimos que ya viene en ms
+    // Si ts es demasiado chico, seguramente está en segundos
     tokenTsMs = ts > 2e10 ? ts : ts * 1000;
   }
 
@@ -80,22 +100,47 @@ export function validateTokken(rawToken) {
     const MAX_AGE_MS = 40 * 24 * 60 * 60 * 1000; // 40 días
 
     if (ageMs < 0 || ageMs > MAX_AGE_MS) {
-      return {
-        status: "invalid",
-        reason: "expired",
-        tokenInfo,
-      };
+      console.log("validateTokken: token expirado");
+      return { status: "invalid", reason: "expired", tokenInfo };
     }
   }
 
-  // 🔴 AQUÍ ya tienes tokenInfo decodificado y "sano".
-  //     Si tienes lógica extra de membresía (consultar Outseta, DB, etc.),
-  //     déjala abajo de este comentario.
-
-  // Por ahora devolvemos valid=ok y dejamos que tu lógica de negocio lo refine:
+  // Token válido
+  console.log("validateTokken: TOKEN VÁLIDO 🎉");
   return {
     status: "valid",
     reason: "ok",
-    tokenInfo,
+    tokenInfo
   };
 }
+
+
+
+/**
+ * =====================================================
+ *  GENERAR TOKEN ESTEBORG (LEGACY)
+ *  Esto evita que truene el import en tokkenRoutes.mjs.
+ *  Lo dejamos compatible con validateTokken.
+ * =====================================================
+ */
+export function generateTokkenForUser({ email, personUid, accountUid, ts }) {
+  const payload = {
+    email: email || "",
+    personUid: personUid || "",
+    accountUid: accountUid || "",
+    ts: ts || Date.now()
+  };
+
+  const jsonStr = JSON.stringify(payload);
+  const base64 = Buffer.from(jsonStr, "utf8").toString("base64");
+
+  console.log("generateTokkenForUser payload:", payload);
+  console.log("generateTokkenForUser base64 (preview):", base64.slice(0, 40) + "...");
+
+  return base64;
+}
+
+
+// =====================================================================================
+// FIN DEL ARCHIVO
+// =====================================================================================
