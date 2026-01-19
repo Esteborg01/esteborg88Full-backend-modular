@@ -1,10 +1,7 @@
-// src/services/demoWelcomeService.mjs
+// -------------------------------------------------------------
+//  Servicio del Demo Esteborg — 100% compatible con OpenAI SDK v4
+// -------------------------------------------------------------
 
-/**
- * Devuelve el prompt de sistema según el idioma.
- * Este prompt fija el personaje de Esteborg y obliga al modelo
- * a responder siempre en el idioma seleccionado.
- */
 function getSystemPromptByLang(lang) {
   switch (lang) {
     case "en":
@@ -18,45 +15,34 @@ function getSystemPromptByLang(lang) {
       return (
         "Tu es Esteborg, un coach exécutif spécialisé en communication, leadership et clarté mentale. " +
         "Tu guides l’utilisateur dans un mini diagnostic pour comprendre sa situation actuelle et lui proposer un mini plan d’action concret. " +
-        "À partir de maintenant tu dois répondre UNIQUEMENT en FRANÇAIS naturel et fluide, même si l’utilisateur écrit dans une autre langue. " +
-        "Garde un ton chaleureux, empathique et professionnel, et reste clair et structuré."
+        "À partir de maintenant tu dois répondre UNIQUEMENT en FRANÇAIS naturel et fluide, même si l’utilisateur écrit dans une autre langue."
       );
     case "pt":
       return (
         "Você é Esteborg, um coach executivo especializado em comunicação, liderança e clareza mental. " +
         "Você está conduzindo o usuário em um mini diagnóstico para entender sua situação atual e oferecer um mini plano de ação prático. " +
-        "De agora em diante, responda SOMENTE em PORTUGUÊS natural e fluente, mesmo que o usuário escreva em outro idioma. " +
-        "Use um tom acolhedor, direto e profissional, com respostas claras e objetivas."
-      );
-    case "de":
-      return (
-        "Du bist Esteborg, ein Executive Coach für Kommunikation, Führung und mentale Klarheit. " +
-        "Du führst den Nutzer durch einen kurzen Mini-Check, um seine aktuelle Situation zu verstehen und ihm einen praktischen Aktionsplan zu geben. " +
-        "Ab jetzt musst du NUR auf DEUTSCH in natürlicher, flüssiger Sprache antworten, auch wenn der Nutzer in einer anderen Sprache schreibt. " +
-        "Bleibe warm, empathisch und professionell, mit klaren und strukturierten Antworten."
+        "De agora em diante, responda SOMENTE em PORTUGUÊS natural e fluente, mesmo que o usuário escreva em outro idioma."
       );
     case "it":
       return (
         "Sei Esteborg, un coach esecutivo specializzato in comunicazione, leadership e chiarezza mentale. " +
-        "Stai guidando l’utente in un mini diagnostico per capire la sua situazione attuale e offrirgli un mini piano d’azione pratico. " +
-        "D’ora in poi devi rispondere SOLO in ITALIANO naturale e fluido, anche se l’utente scrive in un’altra lingua. " +
-        "Mantieni un tono caldo, empatico e professionale, con risposte chiare e strutturate."
+        "D’ora in poi rispondi SOLO in ITALIANO naturale e fluente, anche se l’utente scrive in un’altra lingua."
+      );
+    case "de":
+      return (
+        "Du bist Esteborg, ein Executive Coach für Kommunikation, Führung und mentale Klarheit. " +
+        "Ab jetzt musst du NUR auf DEUTSCH antworten, egal in welcher Sprache der Nutzer schreibt."
       );
     case "es":
     default:
       return (
         "Eres Esteborg, un entrenador ejecutivo especializado en comunicación, liderazgo y claridad mental. " +
-        "Estás guiando a la persona en un mini diagnóstico para entender su situación actual y darle un mini plan de acción práctico. " +
         "A partir de ahora debes responder ÚNICAMENTE en español neutro latino, aunque la persona escriba en otro idioma. " +
-        "Mantén un tono cálido, directo y profesional; sé claro y estructurado, evitando párrafos innecesariamente largos."
+        "Responde siempre con claridad, estructura y calidez."
       );
   }
 }
 
-/**
- * Normaliza el historial para que sólo pasen mensajes válidos al modelo.
- * (Ignora entradas raras o sin role/content.)
- */
 function normalizeHistory(history) {
   if (!Array.isArray(history)) return [];
   return history
@@ -67,49 +53,26 @@ function normalizeHistory(history) {
         (msg.role === "user" || msg.role === "assistant") &&
         typeof msg.content === "string"
     )
-    .map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-    }));
+    .map((msg) => ({ role: msg.role, content: msg.content }));
 }
 
-/**
- * Construye el contenido del mensaje de usuario para el modelo.
- */
 function buildUserContent(message, userName, interactionCount, remainingInteractions) {
   const baseText = typeof message === "string" ? message : "";
 
   const metaLines = [];
-
-  if (userName) {
-    metaLines.push(`User name: ${userName}`);
-  }
-
-  // Info ligera para que el modelo sepa que es una demo corta
+  if (userName) metaLines.push(`User name: ${userName}`);
   metaLines.push(
-    `Demo info: this is a short mini assessment conversation. Current turn index (assistant replies so far): ${interactionCount}. ` +
-      `Approximate remaining assistant replies before the demo ends: ${remainingInteractions}.`
+    `Demo info: assistant replies so far: ${interactionCount}, remaining: ${remainingInteractions}.`
   );
 
-  const metaBlock = metaLines.join("\n");
-
-  if (!baseText) return metaBlock;
-  return `${metaBlock}\n\nUser message:\n${baseText}`;
+  const meta = metaLines.join("\n");
+  return `${meta}\n\nUser message:\n${baseText}`;
 }
 
-/**
- * Obtiene la respuesta del modelo para el demo de bienvenida / mini assessment.
- *
- * @param {object} openai - Cliente de OpenAI ya configurado y pasado desde server.mjs
- * @param {object} params
- * @param {string} params.message - Último mensaje del usuario
- * @param {Array}  params.history - Historial de mensajes (user/assistant)
- * @param {string} [params.userName] - Nombre del usuario (opcional)
- * @param {number} [params.interactionCount] - Interacciones de assistant hasta ahora
- * @param {number} [params.remainingInteractions] - Interacciones restantes estimadas
- * @param {string} [params.lang] - Código de idioma normalizado: "es" | "en" | "fr" | "pt" | "de" | "it"
- * @returns {Promise<string>} reply - Texto de respuesta de Esteborg
- */
+// -------------------------------------------------------------
+//  🚀 FUNCIÓN PRINCIPAL — AQUÍ VA EL CAMBIO IMPORTANTE
+// -------------------------------------------------------------
+
 export async function getDemoWelcomeReply(
   openai,
   {
@@ -121,15 +84,10 @@ export async function getDemoWelcomeReply(
     lang = "es",
   } = {}
 ) {
-  if (!openai) {
-    throw new Error("OpenAI client is not provided to getDemoWelcomeReply");
-  }
-
   const safeLang = (lang || "es").toLowerCase();
+
   const systemPrompt = getSystemPromptByLang(safeLang);
-
   const normalizedHistory = normalizeHistory(history);
-
   const userContent = buildUserContent(
     message,
     userName,
@@ -140,34 +98,34 @@ export async function getDemoWelcomeReply(
   const messages = [
     { role: "system", content: systemPrompt },
     ...normalizedHistory,
-    { role: "user", content: userContent },
+    { role: "user", content: userContent }
   ];
 
   try {
-    // Ajusta este bloque a la forma en que ya usas el cliente de OpenAI en tu proyecto.
-    // Aquí asumo la API clásica: openai.chat.completions.create(...)
+    // ---------------------------------------------------------
+    //   ESTA ES LA LLAMADA CORRECTA PARA OPENAI SDK v4
+    // ---------------------------------------------------------
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini", // o el modelo que uses en el resto del backend
+      model: "gpt-4.1-mini",
       messages,
       temperature: 0.7,
-      max_tokens: 600,
+      max_tokens: 600
     });
 
     const reply =
       completion?.choices?.[0]?.message?.content?.trim() ||
       (safeLang === "en"
         ? "I couldn’t generate a detailed answer right now. Please try asking again."
-        : "No pude generar una respuesta detallada en este momento. Intenta preguntar de nuevo.");
+        : "No pude generar una respuesta detallada en este momento. Intenta preguntarlo de nuevo.");
 
     return reply;
   } catch (err) {
-    console.error("❌ Error en getDemoWelcomeReply:", err);
+    console.error("❌ Error real en getDemoWelcomeReply:", err);
 
-    // En lugar de lanzar error (y provocar 500), devolvemos un mensaje amigable.
     const fallback =
       safeLang === "en"
-        ? "There was a temporary issue generating your answer. Please try again in a moment or refresh the page."
-        : "Hubo un problema temporal al generar tu respuesta. Por favor intenta de nuevo en un momento o refresca la página.";
+        ? "There was a temporary issue generating your answer. Please try again later."
+        : "Hubo un problema temporal al generar tu respuesta. Por favor intenta más tarde.";
 
     return fallback;
   }
