@@ -2,6 +2,9 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { compressHistoryMiddleware } from "./src/middleware/compressHistory.mjs";
+import { rateLimiter } from "./src/middleware/rateLimiter.mjs";
+import { longMessageGuard } from "./src/middleware/longMessageGuard.mjs";
 
 // Cliente OpenAI
 import { openai } from "./src/config/openaiClient.mjs";
