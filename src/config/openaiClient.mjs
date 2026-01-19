@@ -1,15 +1,12 @@
-// src/config/openaiClient.mjs
 import OpenAI from "openai";
-import dotenv from "dotenv";
 
-dotenv.config();
-
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-if (!OPENAI_API_KEY) {
-  console.error("❌ Falta OPENAI_API_KEY en variables de entorno");
+if (!process.env.OPENAI_API_KEY) {
+  console.error("[OpenAI] Falta la variable de entorno OPENAI_API_KEY");
+  throw new Error("OPENAI_API_KEY is not set");
 }
 
-export const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
+
+export default openai;
