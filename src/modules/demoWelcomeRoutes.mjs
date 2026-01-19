@@ -1,5 +1,6 @@
 // src/modules/demoWelcomeRoutes.mjs
 import { getDemoWelcomeReply } from "../services/demoWelcomeService.mjs";
+import { trackDemoInteraction } from "../utils/metrics.mjs";
 
 export function registerDemoRoutes(app, openai) {
   app.post("/api/demo/welcome", async (req, res) => {
@@ -46,6 +47,16 @@ export function registerDemoRoutes(app, openai) {
       const remainingAfter = Math.max(0, MAX_STEPS - newInteractionCount);
 
       const demoStatus = remainingAfter <= 0 ? "ended" : "active";
+
+      // 🔹 Registrar evento de métricas del demo
+trackDemoInteraction({
+  req,
+  step: newInteractionCount,
+  status: demoStatus,
+  lang: lang || "es",
+  remaining: remainingAfter,
+  userName,
+});
 
       return res.json({
         reply,
