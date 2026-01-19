@@ -4,7 +4,13 @@ import { getDemoWelcomeReply } from "../services/demoWelcomeService.mjs";
 export function registerDemoRoutes(app, openai) {
   app.post("/api/demo/welcome", async (req, res) => {
     try {
-      const { message, userName, history } = req.body || {};
+      const { message, userName, history, lang } = req.body || {};
+
+      // Normalizar idioma que viene del front
+      const langCode = (lang || "es").toLowerCase();
+      const safeLang = ["es", "en", "fr", "pt", "de", "it"].includes(langCode)
+        ? langCode
+        : "es";
 
       // Contar cuántas respuestas del assistant ya hubo
       let interactionCount = 0;
@@ -29,10 +35,17 @@ export function registerDemoRoutes(app, openai) {
         );
       }
 
+      // Si ya se acabó la demo, mandar mensaje final
       if (interactionCount >= MAX_INTERACTIONS) {
         let hardStopMessage;
 
-        if (isEnglish(message)) {
+        // Para el hard stop usamos idioma:
+        // - si front dijo EN, mandamos inglés
+        // - si no, usamos la heurística vieja como fallback
+        const shouldUseEnglish =
+          safeLang === "en" || (safeLang !== "es" && isEnglish(message));
+
+        if (shouldUseEnglish) {
           hardStopMessage =
             "🧭 Thank you for joining this conversation. It was a pleasure helping you reflect on your communication. " +
             "If you'd like to continue your process or access the full 7-day training with a 50% discount, visit https://membersvip.esteborg.live/. " +
@@ -64,6 +77,7 @@ export function registerDemoRoutes(app, openai) {
         userName,
         interactionCount,
         remainingInteractions,
+        lang: safeLang,
       });
 
       return res.json({
