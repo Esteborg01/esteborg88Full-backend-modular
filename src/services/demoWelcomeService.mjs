@@ -2,7 +2,6 @@
 //   Esteborg Demo Service — Versión optimizada para gpt-4o-mini
 //   - System prompt reducido (50–60 tokens)
 //   - Respuestas cortas (120 max tokens)
-//   - Compresión de historial
 //   - Ahorro de 60–80% tokens
 // ===============================================================
 
@@ -10,7 +9,7 @@
 // 1. PROMPTS POR IDIOMA
 // ------------------------
 function getSystemPromptByLang(lang) {
-  switch (lang) {
+  switch ((lang || "es").toLowerCase()) {
     case "en":
       return (
         "You are Esteborg, an executive coach in communication, leadership and mental clarity. " +
@@ -62,31 +61,7 @@ function normalizeHistory(history) {
 }
 
 // ------------------------
-// 3. COMPRESIÓN DE HISTORIAL (context-shortening)
-// ------------------------
-function compressHistory(history) {
-  if (!Array.isArray(history) || history.length <= 6) return history;
-
-  // Tomamos solo los últimos 6 mensajes reales
-  const lastSix = history.slice(-6);
-
-  // Creamos un resumen ligero
-  const summaryText = lastSix
-    .map((m) => `${m.role}: ${m.content}`)
-    .join(" | ");
-
-  return [
-    {
-      role: "system",
-      content:
-        "Resumen de la conversación previa (versión comprimida): " +
-        summaryText,
-    },
-  ];
-}
-
-// ------------------------
-// 4. CONTENIDO DEL USUARIO (con metadata del demo)
+// 3. CONTENIDO DEL USUARIO (con metadata del demo)
 // ------------------------
 function buildUserContent(message, userName, interactionCount, remainingInteractions) {
   const base = message || "";
@@ -103,7 +78,7 @@ function buildUserContent(message, userName, interactionCount, remainingInteract
 }
 
 // ===============================================================
-// 5. FUNCIÓN PRINCIPAL — getDemoWelcomeReply()
+// 4. FUNCIÓN PRINCIPAL — getDemoWelcomeReply()
 // ===============================================================
 export async function getDemoWelcomeReply(
   openai,
@@ -118,16 +93,8 @@ export async function getDemoWelcomeReply(
 ) {
   const safeLang = (lang || "es").toLowerCase();
 
-  // 1. Prompt principal
   const systemPrompt = getSystemPromptByLang(safeLang);
-
-  // 2. Historial normalizado
-  let normalizedHistory = normalizeHistory(history);
-
-  // 3. Compresión del historial (si crece mucho)
-  normalizedHistory = compressHistory(normalizedHistory);
-
-  // 4. Contenido final del usuario
+  const normalizedHistory = normalizeHistory(history);
   const userContent = buildUserContent(
     message,
     userName,
@@ -135,21 +102,19 @@ export async function getDemoWelcomeReply(
     remainingInteractions
   );
 
-  // 5. Construcción de mensajes
   const messages = [
     { role: "system", content: systemPrompt },
     ...normalizedHistory,
     { role: "user", content: userContent }
   ];
 
-  // 6. Llamada a OpenAI optimizada
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
       temperature: 0.6,
-      max_tokens: 120,       // Respuestas cortas (reducción 70%)
-      frequency_penalty: 0.2 // Evita redundancia
+      max_tokens: 120,
+      frequency_penalty: 0.2
     });
 
     const reply =
@@ -162,7 +127,6 @@ export async function getDemoWelcomeReply(
   } catch (err) {
     console.error("❌ ERROR REAL en getDemoWelcomeReply:", err);
 
-    // Rate limit explícito
     const isRateLimit =
       err?.status === 429 ||
       err?.code === "rate_limit_exceeded" ||
