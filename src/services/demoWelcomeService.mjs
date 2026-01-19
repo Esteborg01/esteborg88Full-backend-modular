@@ -162,7 +162,13 @@ export async function getDemoWelcomeReply(
     return reply;
   } catch (err) {
     console.error("❌ Error en getDemoWelcomeReply:", err);
-    // Propagamos el error para que la ruta devuelva 500 y el front muestre el mensaje de fallback.
-    throw err;
+
+    // En lugar de lanzar error (y provocar 500), devolvemos un mensaje amigable.
+    const fallback =
+      safeLang === "en"
+        ? "There was a temporary issue generating your answer. Please try again in a moment or refresh the page."
+        : "Hubo un problema temporal al generar tu respuesta. Por favor intenta de nuevo en un momento o refresca la página.";
+
+    return fallback;
   }
 }
