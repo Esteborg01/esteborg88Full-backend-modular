@@ -1,13 +1,28 @@
-// ===============================================================
-//   Esteborg Demo Service — Versión optimizada para gpt-4o-mini
-//   - System prompt reducido (50–60 tokens)
-//   - Respuestas cortas (120 max tokens)
-//   - Ahorro de 60–80% tokens
-// ===============================================================
+// src/services/demoWelcomeService.mjs
 
-// ------------------------
-// 1. PROMPTS POR IDIOMA
-// ------------------------
+function inferLang(history = [], message = "", explicitLang) {
+  // 1) Si viene lang explícito desde el frontend, úsalo
+  if (explicitLang && ["es", "en", "pt", "fr", "it", "de"].includes(explicitLang)) {
+    return explicitLang;
+  }
+
+  const text =
+    (history || [])
+      .map((m) => (m && m.content) || "")
+      .join(" ")
+      .toLowerCase() + " " + (message || "").toLowerCase();
+
+  // Heurística muuuy simple
+  if (text.match(/[áéíóúñ]/)) return "es";
+  if (text.includes(" the ") || text.includes(" and ")) return "en";
+  if (text.includes(" você ") || text.includes(" você") || text.includes("claridade")) return "pt";
+  if (text.includes(" vous ") || text.includes("clarté")) return "fr";
+  if (text.includes(" lei ") || text.includes("chiarezza")) return "it";
+  if (text.includes(" klarheit ") || text.includes("führung")) return "de";
+
+  return "es";
+}
+
 function getSystemPromptByLang(lang) {
   switch ((lang || "es").toLowerCase()) {
     case "en":
@@ -39,7 +54,7 @@ function getSystemPromptByLang(lang) {
         "Sei Esteborg, coach esecutivo di comunicazione, leadership e chiarezza mentale. " +
         "Rispondi SOLO in italiano naturale e fluente. Tieni le risposte relativamente brevi (3–6 frasi), calde, dirette e pratiche. " +
         "In ogni risposta devi: (1) riconoscere brevemente ciò che l’utente ha detto, (2) offrire un insight chiaro e utile sulla sua situazione, " +
-        "(3) proporre un suggerimento concreto, un esempio o una micro-strumento che possa applicare, e (4) FINIRE SEMPRE con una domanda di follow-up specifica che aiuti a far avanzare questo mini-diagnostico. " +
+        "(3) proporre un suggerimento concreto, un esempio o un micro-strumento che possa applicare, e (4) FINIRE SEMPRE con una domanda di follow-up specifica che aiuti a far avanzare questo mini-diagnostico. " +
         "Fai una sola domanda alla volta, molto concreta."
       );
     case "de":
@@ -62,69 +77,86 @@ function getSystemPromptByLang(lang) {
   }
 }
 
-// ------------------------
-// 2. NORMALIZACIÓN SIMPLE
-// ------------------------
-function normalizeHistory(history) {
-  if (!Array.isArray(history)) return [];
-  return history
-    .filter(
-      (msg) =>
-        msg &&
-        typeof msg === "object" &&
-        (msg.role === "user" || msg.role === "assistant") &&
-        typeof msg.content === "string"
-    )
-    .map((msg) => ({ role: msg.role, content: msg.content }));
+function getTopicGuardByLang(lang) {
+  switch ((lang || "es").toLowerCase()) {
+    case "en":
+      return (
+        "TOPIC BOUNDARY: In this free demo you ONLY work on communication, emotional intelligence, leadership and mental clarity. " +
+        "If the user asks about ERP systems, software vendors, CRMs, marketing tactics, finances, politics, religion, or any technical topic outside communication/leadership, " +
+        "DO NOT give detailed recommendations or external providers. Instead, briefly say (in 1–2 sentences) that this demo is focused on communication and leadership, " +
+        "and ALWAYS invite them to book a 1:1 session at https://esteborg.live for that type of question."
+      );
+    case "pt":
+      return (
+        "LIMITE DE TEMA: Nesta demo gratuita você trabalha APENAS comunicação, inteligência emocional, liderança e clareza mental. " +
+        "Se a pessoa perguntar sobre ERPs, fornecedores de software, CRMs, marketing, finanças, política ou outros temas técnicos fora de comunicação/liderança, " +
+        "NÃO dê recomendações detalhadas nem fornecedores externos. Em vez disso, responda brevemente (1–2 frases) que esta demo é focada em comunicação e liderança " +
+        "e SEMPRE convide para agendar uma sessão em https://esteborg.live para aprofundar esse tipo de tema."
+      );
+    case "fr":
+      return (
+        "BORNES DE SUJET: Dans cette démo gratuite tu travailles UNIQUEMENT la communication, l’intelligence émotionnelle, le leadership et la clarté mentale. " +
+        "Si l’utilisateur pose des questions sur des ERP, des fournisseurs logiciels, des CRM, du marketing, des finances, de la politique ou d’autres sujets techniques hors communication/leadership, " +
+        "NE DONNE PAS de recommandations détaillées ni de prestataires externes. Réponds très brièvement (1–2 phrases) que cette démo est centrée sur la communication et le leadership " +
+        "et INVITE TOUJOURS à réserver une séance sur https://esteborg.live pour ce genre de question."
+      );
+    case "it":
+      return (
+        "LIMITI DI TEMA: In questa demo gratuita lavori SOLO su comunicazione, intelligenza emotiva, leadership e chiarezza mentale. " +
+        "Se l’utente chiede di ERP, fornitori software, CRM, marketing, finanza, politica o altri temi tecnici fuori da comunicazione/leadership, " +
+        "NON dare raccomandazioni dettagliate né fornitori esterni. Rispondi brevemente (1–2 frasi) che questa demo è focalizzata su comunicazione e leadership " +
+        "e INVITALO SEMPRE a prenotare una sessione su https://esteborg.live per approfondire quel tipo di tema."
+      );
+    case "de":
+      return (
+        "THEMEN-GRENZE: In dieser kostenlosen Demo arbeitest du NUR an Kommunikation, emotionaler Intelligenz, Führung und mentaler Klarheit. " +
+        "Wenn die Person nach ERP-Systemen, Software-Anbietern, CRMs, Marketing, Finanzen, Politik oder anderen technischen Themen außerhalb von Kommunikation/Führung fragt, " +
+        "GIB KEINE detaillierten Empfehlungen oder externen Anbieter. Antworte stattdessen sehr kurz (1–2 Sätze), dass diese Demo auf Kommunikation und Führung fokussiert ist " +
+        "und LADE IMMER dazu ein, eine Session auf https://esteborg.live zu buchen, um solche Themen zu vertiefen."
+      );
+    case "es":
+    default:
+      return (
+        "LÍMITE DE TEMA: En esta demo gratuita SOLO trabajas temas de comunicación, inteligencia emocional, liderazgo y claridad mental. " +
+        "Si la persona te pregunta por ERPs, proveedores de software, CRMs, marketing, finanzas, política, religión u otros temas técnicos fuera de comunicación/liderazgo, " +
+        "NO des recomendaciones detalladas ni sugieras proveedores externos. En lugar de eso, responde muy breve (1–2 frases) que esta demo está enfocada en comunicación y liderazgo " +
+        "y SIEMPRE invítale a agendar una sesión en https://esteborg.live para ver ese tipo de tema a profundidad."
+      );
+  }
 }
 
-// ------------------------
-// 3. CONTENIDO DEL USUARIO (con metadata del demo)
-// ------------------------
-function buildUserContent(message, userName, interactionCount, remainingInteractions) {
-  const base = message || "";
-
-  const meta = [
-    userName ? `Nombre del usuario: ${userName}` : "",
-    `Interacciones previas: ${interactionCount}`,
-    `Interacciones restantes: ${remainingInteractions}`
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  return `${meta}\n\nMensaje del usuario:\n${base}`;
-}
-
-// ===============================================================
-// 4. FUNCIÓN PRINCIPAL — getDemoWelcomeReply()
-// ===============================================================
 export async function getDemoWelcomeReply(
   openai,
-  {
-    message,
-    history = [],
-    userName = "",
-    interactionCount = 0,
-    remainingInteractions = 0,
-    lang = "es",
-  } = {}
+  { message, history = [], userName, interactionCount = 0, remainingInteractions = 0, lang }
 ) {
-  const safeLang = (lang || "es").toLowerCase();
-
-  const systemPrompt = getSystemPromptByLang(safeLang);
-  const normalizedHistory = normalizeHistory(history);
-  const userContent = buildUserContent(
-    message,
-    userName,
-    interactionCount,
-    remainingInteractions
-  );
+  const effectiveLang = inferLang(history, message, lang);
+  const systemPrompt = getSystemPromptByLang(effectiveLang);
+  const topicGuard = getTopicGuardByLang(effectiveLang);
 
   const messages = [
     { role: "system", content: systemPrompt },
-    ...normalizedHistory,
-    { role: "user", content: userContent }
+    { role: "system", content: topicGuard },
   ];
+
+  if (Array.isArray(history)) {
+    for (const msg of history) {
+      if (msg && typeof msg.role === "string" && typeof msg.content === "string") {
+        messages.push(msg);
+      }
+    }
+  }
+
+  let userContent = message || "";
+
+  if (userName && interactionCount === 0) {
+    userContent =
+      `Mi nombre es ${userName} y quiero trabajar en esto: ` + userContent;
+  }
+
+  messages.push({
+    role: "user",
+    content: userContent,
+  });
 
   try {
     const completion = await openai.chat.completions.create({
@@ -132,32 +164,27 @@ export async function getDemoWelcomeReply(
       messages,
       temperature: 0.6,
       max_tokens: 220,
-      frequency_penalty: 0.2
+      frequency_penalty: 0.2,
     });
 
     const reply =
       completion?.choices?.[0]?.message?.content?.trim() ||
-      (safeLang === "en"
-        ? "I couldn’t generate a full response. Please try again."
-        : "No pude generar una respuesta completa. Intenta de nuevo.");
+      (effectiveLang === "en"
+        ? "There was an issue generating a response. Please try again."
+        : "Ocurrió un problema generando la respuesta. Intenta de nuevo.");
 
     return reply;
   } catch (err) {
-    console.error("❌ ERROR REAL en getDemoWelcomeReply:", err);
+    console.error("❌ Error real en getDemoWelcomeReply:", err);
 
-    const isRateLimit =
-      err?.status === 429 ||
-      err?.code === "rate_limit_exceeded" ||
-      err?.error?.code === "rate_limit_exceeded";
-
-    if (isRateLimit) {
-      return safeLang === "en"
-        ? "The demo reached its temporary technical limit. Try again in a few moments."
-        : "La demo alcanzó temporalmente su límite técnico. Intenta de nuevo en unos momentos.";
+    if (err?.status === 429) {
+      return effectiveLang === "en"
+        ? "Right now this free demo is at its limit of requests. Please wait a few seconds and try again, or book a session at https://esteborg.live."
+        : "En este momento la demo gratuita está al límite de peticiones. Espera unos segundos y vuelve a intentar, o agenda una sesión en https://esteborg.live.";
     }
 
-    return safeLang === "en"
-      ? "There was a temporary issue. Please try again."
-      : "Hubo un problema temporal. Intenta de nuevo.";
+    return effectiveLang === "en"
+      ? "There was an unexpected error. Please try again in a moment."
+      : "Ocurrió un error inesperado. Intenta de nuevo en un momento.";
   }
 }
