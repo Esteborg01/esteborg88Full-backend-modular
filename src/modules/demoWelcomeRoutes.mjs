@@ -1,76 +1,65 @@
-// src/modules/demoWelcomeRoutes.mjs
+import express from "express";
 import { getDemoWelcomeReply } from "../services/demoWelcomeService.mjs";
-import { trackDemoInteraction } from "../utils/metrics.mjs";
+import { trackDemoInteraction } from "../services/metricsService.mjs";
 
-export function registerDemoRoutes(app, openai) {
-  app.post("/api/demo/welcome", async (req, res) => {
-    try {
-      const {
-        message,
-        userName,
-        history,
-        lang,
-        demoStep,
-        maxDemoInteractions,
-      } = req.body || {};
+const router = express.Router();
 
-      // Historial seguro
-      const safeHistory = Array.isArray(history) ? history : [];
+const MAX_STEPS = 14; // Límite de interacciones del demo
 
-      // Cuántas respuestas del assistant hay ya en el historial
-      let interactionCount = safeHistory.filter(
-        (msg) => msg && msg.role === "assistant"
-      ).length;
+router.post("/welcome", async (req, res) => {
+  try {
+    const { message, lang, interactionCount = 0, userName = "" } = req.body;
 
-      // Límite duro de interacciones de la demo
-      const MAX_STEPS =
-        typeof maxDemoInteractions === "number" && maxDemoInteractions > 0
-          ? maxDemoInteractions
-          : 14;
-
-      const remainingInteractions = Math.max(0, MAX_STEPS - interactionCount);
-
-      // Pedimos la respuesta a OpenAI con contexto de pasos
-      const reply = await getDemoWelcomeReply(openai, {
-        message,
-        history: safeHistory,
-        userName,
-        lang,
-        interactionCount,        // respuestas previas del assistant
-        remainingInteractions,   // cuántas quedarían ANTES de esta
-        demoStep,                // por si el front lo manda explícito
-        maxDemoInteractions: MAX_STEPS,
-      });
-
-      // Ya se generó respuesta -> contamos esta como una interacción más
-      const newInteractionCount = interactionCount + 1;
-      const remainingAfter = Math.max(0, MAX_STEPS - newInteractionCount);
-
-      const demoStatus = remainingAfter <= 0 ? "ended" : "active";
-
-      // 🔹 Registrar evento de métricas del demo
-trackDemoInteraction({
-  req,
-  step: newInteractionCount,
-  status: demoStatus,
-  lang: lang || "es",
-  remaining: remainingAfter,
-  userName,
-});
-
-      return res.json({
-        reply,
-        demoStatus,
-        interactionCount: newInteractionCount,
-        remainingInteractions: remainingAfter,
-      });
-    } catch (err) {
-      console.error("❌ Error en /api/demo/welcome:", err);
-      return res.status(500).json({
-        error: "internal_error",
-        message:
-          "Ocurrió un error inesperado en el demo 'Esteborg te da la bienvenida'.",
+    // Validación mínima
+    if (!message || !lang) {
+      return res.status(400).json({
+        error: "invalid_request",
+        message: "Missing message or lang in request.",
       });
     }
-  });
-}
+
+    // Llamamos al servicio que genera la respuesta del demo
+    const reply = await getDemoWelcomeReply({
+      userMessage: message,
+      lang,
+      interactionCount,
+      userName
+    });
+
+    // --- Contador de interacciones ---
+    const newInteractionCount = interactionCount + 1;
+    const remainingAfter = Math.max(0, MAX_STEPS - newInteractionCount);
+
+    // Estado de la demo según cuántas interacciones quedan
+    const demoStatus = remainingAfter <= 0 ? "ended" : "active";
+
+    // --- Registrar métrica ---
+    trackDemoInteraction({
+      req,
+      step: newInteractionCount,
+      status: demoStatus,
+      lang: lang || "es",
+      remaining: remainingAfter,
+      userName: userName || "",
+    });
+
+    // Respondemos al frontend
+    return res.json({
+      reply,
+      demoStatus,
+      interactionCount: newInteractionCount,
+      remainingInteractions: remainingAfter,
+    });
+
+  } catch (err) {
+    console.error("❌ Error en /api/demo/welcome:", err);
+
+    return res.status(500).json({
+      error: "internal_error",
+      message:
+        "Ocurrió un error inesperado en el demo 'Esteborg te da la bienvenida'.",
+    });
+  }
+});
+
+export default router;
