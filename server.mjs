@@ -18,6 +18,7 @@ import { registerErpevRoutes } from "./src/modules/erpevRoutes.mjs";
 import { registerDemoRoutes } from "./src/modules/demoWelcomeRoutes.mjs";
 import { registerVoiceRoutes } from "./src/modules/voiceRoutes.mjs";
 import { registerTokkenRoutes } from "./src/modules/tokkenRoutes.mjs";
+import { registerIaVipComRoutes } from "./src/modules/iavipcom.mjs";
 
 // ✨ NUEVO MÓDULO ESTEBORG IA – DESPLIEGA TODO TU PODER
 // Asegúrate de que iavipcom.mjs exporte:
@@ -47,8 +48,6 @@ registerComunicaRoutes(app, openai);
 registerVentasRoutes(app, openai);
 registerErpevRoutes(app, openai);
 registerDemoRoutes(app, openai);
-
-// 🔥 NUEVO: Módulo Esteborg IA - Despliega todo tu poder (iavipcom)
 registerIaVipComRoutes(app, openai);
 
 // Módulo Tokken Members (generate-token)
