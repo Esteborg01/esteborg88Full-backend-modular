@@ -1,80 +1,69 @@
 // src/modules/iavipcom.mjs
-import express from "express";
-import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { validateTokken } from "../utils/tokken.mjs";
+import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
-// ⚠️ El nombre de esta función debe coincidir con lo que importes en server.mjs
-export function registerIaVipComRoutes(app) {
-  const router = express.Router();
-
-  router.post("/", async (req, res) => {
+export function registerIaVipComRoutes(app, openai) {
+  app.post("/api/modules/iavipcom", async (req, res) => {
     try {
+      // Aceptamos el token tanto en rawToken (como Com7) como en token/header
       const {
         message,
-        history = [],
-        lang = "es",
+        rawToken,
+        token: bodyToken,
         userName,
-        // token // si decides usar token VIP por body
+        history,
       } = req.body || {};
 
-      // 🔐 Ejemplo de validación de token (si ya tienes util, descomenta y adapta)
-      // const rawToken = req.headers["x-esteborg-token"] || token;
-      // const isValid = await validateVipToken(rawToken);
-      // if (!isValid) {
-      //   return res.status(401).json({ error: "VIP token inválido" });
-      // }
+      const headerToken = req.headers["x-esteborg-token"];
+      const effectiveToken = rawToken || bodyToken || headerToken;
 
-      const systemPrompt = `
-Eres "Esteborg IA - Despliega todo tu poder", el copiloto ejecutivo oficial de Esteborg Institute.
+      const tokenResult = validateTokken(effectiveToken);
 
-Perfil:
-- Hablas en español latino (puedes cambiar el registro a más ejecutivo o más relajado según el usuario).
-- Ayudas a directores, fundadores y ejecutivos a usar IA generativa de forma estratégica.
-- Conectas IA con negocio real: ventas, operaciones, liderazgo, marketing, finanzas y productividad personal.
+      // ❌ Tokken inválido / vencido / ausente → mensaje de bienvenida pidiendo Tokken
+      if (tokenResult.status !== "valid") {
+        const fallbackReply =
+          "¡Qué gusto saludarte! 😊 Antes de entrar a tu entrenamiento necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
+          "Si aún no tienes token, puedes obtenerlo o recuperarlo en:\n" +
+          "https://membersvip.esteborg.live/#miembrosvip\n\n" +
+          "1️⃣ Pega aquí tu Tokken Esteborg Members.\n" +
+          "2️⃣ Después dime cómo te llamas y qué quieres lograr con IA en los próximos 90 días.";
 
-Estilo:
-- Directo, empático, práctico.
-- Siempre terminas con acciones concretas (bullets o pasos).
-- Cuando tenga sentido, mencionas el programa "Esteborg AI Executive & Prompt Engineer" como siguiente nivel.
+        return res.json({
+          module: "iavipcom",
+          reply: fallbackReply,
+          tokenStatus: tokenResult.status,
+          tokenInfo: tokenResult,
+        });
+      }
 
-Reglas:
-- Pide contexto cuando la pregunta sea muy general.
-- No inventes datos específicos de empresas reales; usa ejemplos genéricos o supuestos claros.
-`.trim();
+      // ✅ Tokken válido → seguimos con el flujo normal
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({
+          error: "missing_message",
+          message: "Falta el mensaje del usuario.",
+        });
+      }
 
-      const messages = [
-        { role: "system", content: systemPrompt },
-        ...(history || []),
-        {
-          role: "user",
-          content: userName
-            ? `Usuario: ${userName}. Mensaje: ${message}`
-            : message,
-        },
-      ];
-
-      const completion = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages,
-        temperature: 0.7,
+      const reply = await getIaVipComReply(openai, {
+        message,
+        history,
+        userName,
       });
 
-      const reply =
-        completion.choices?.[0]?.message?.content ||
-        "No pude generar una respuesta en este momento. Intenta de nuevo.";
-
-      return res.json({ reply });
-    } catch (error) {
-      console.error("Error en iavipcom:", error);
-      return res
-        .status(500)
-        .json({ error: "Error interno en Esteborg IA VIP. Intenta más tarde." });
+      return res.json({
+        module: "iavipcom",
+        reply,
+        tokenStatus: "valid",
+        tokenInfo: tokenResult.tokenInfo,
+      });
+    } catch (err) {
+      console.error("❌ Error en /api/modules/iavipcom:", err);
+      return res.status(500).json({
+        error: "internal_error",
+        message:
+          "Ocurrió un error inesperado en el módulo Esteborg IA - Despliega todo tu poder.",
+      });
     }
   });
-
-  // 🔚 Prefijo final de la ruta
-  app.use("/api/modules/iavipcom", router);
 }
