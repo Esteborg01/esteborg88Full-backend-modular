@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { compressHistoryMiddleware } from "./src/middleware/compressHistory.mjs";
 import { rateLimiter } from "./src/middleware/rateLimiter.mjs";
 import { longMessageGuard } from "./src/middleware/longMessageGuard.mjs";
+import { modelSelector } from "./src/middleware/modelSelector.mjs";
 
 // Cliente OpenAI
 import { openai } from "./src/config/openaiClient.mjs";
@@ -26,6 +27,7 @@ app.use(express.json());
 app.use(rateLimiter);
 app.use(longMessageGuard);
 app.use(compressHistoryMiddleware);
+app.use(modelSelector);
 
 const PORT = process.env.PORT || 10000;
 
