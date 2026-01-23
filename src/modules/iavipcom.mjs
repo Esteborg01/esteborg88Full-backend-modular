@@ -46,24 +46,26 @@ export function registerIaVipComRoutes(app, openai) {
       }
 
       const reply = await getIaVipComReply(openai, {
-        message,
-        history,
-        userName,
-      });
+  message,
+  history: history || [],
+  userName,
+});
 
-      return res.json({
-        module: "iavipcom",
-        reply,
-        tokenStatus: "valid",
-        tokenInfo: tokenResult.tokenInfo,
-      });
-    } catch (err) {
-      console.error("❌ Error en /api/modules/iavipcom:", err);
-      return res.status(500).json({
-        error: "internal_error",
-        message:
-          "Ocurrió un error inesperado en el módulo Esteborg IA - Despliega todo tu poder.",
-      });
+// Devolvemos el history actualizado tal como hace COM7
+const updatedHistory = [
+  ...(history || []),
+  { role: "user", content: message },
+  { role: "assistant", content: reply }
+];
+
+return res.json({
+  module: "iavipcom",
+  reply,
+  tokenStatus: "valid",
+  tokenInfo: tokenResult.tokenInfo,
+  history: updatedHistory,   // ← ESTO HACE QUE YA NO REPITA
+});
+
     }
   });
 }
