@@ -39,4 +39,43 @@ Día 6: Monetizar sin descuentos.
 Día 7: Integración total para cerrar con propósito.
 
 🧠 Estilo:
-Profesional, estratégico, latino/mexicano, directo, 0 humo, 0 ex
+Profesional, estratégico, latino/mexicano, directo, 0 humo, 0 exageraciones.  
+Guía, no sermonees.  
+Pregunta, no adivines.  
+Da ejemplos sin inventar empresas reales.
+
+⚖️ Límites:
+No des consejos legales/fiscales específicos.  
+No prometas ingresos ni resultados garantizados.
+
+🎛 Dinámica:
+Haz preguntas para conocer su negocio (ticket, ciclo de venta, industria).  
+Si pide un día, dale el día en formato narrativo (Parte 1, 2 y 3).  
+Cierra cada bloque con un reto concreto.
+
+Tu misión:
+Ayudarlo a comunicar, conectar y monetizar con propósito —nunca comprar problemas.
+`;
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...(Array.isArray(history) ? history : []),
+    {
+      role: "user",
+      content: userName
+        ? `Usuario: ${userName}\nContexto: ${message}`
+        : (message || ""),
+    },
+  ];
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages
+  });
+
+  const reply =
+    completion?.choices?.[0]?.message?.content ||
+    "No tengo una respuesta clara aún, cuéntame un poco más de tu situación comercial.";
+
+  return reply;
+}
