@@ -1,7 +1,46 @@
-// src/modules/erpev.mjs
+// src/modules/erpevRoutes.mjs
 
 import { validateTokken } from "../utils/tokken.mjs";
-import { getErpEvalReply } from "../services/erpevService.mjs";
+import { getErpevReply } from "../services/erpevService.mjs";
+
+const FALLBACK_BY_LANG = {
+  es: `¡Qué gusto saludarte! 😊 Antes de entrar a la evaluación avanzada de tu ERP necesito tu Tokken Esteborg Members para validar tu acceso.
+
+Pega tu Tokken aquí abajo ⬇️
+
+Si aún no tienes Tokken, puedes obtenerlo o recuperarlo en:
+https://membersvip.esteborg.live/#miembrosvip`,
+  en: `Great to see you here! 😊 Before we start your advanced ERP evaluation I need your Esteborg Members Tokken to validate your access.
+
+Paste your token below ⬇️
+
+If you don’t have it yet, you can get or recover it at:
+https://membersvip.esteborg.live/#miembrosvip`,
+  pt: `Que bom ter você aqui! 😊 Antes de começarmos a avaliação avançada do seu ERP preciso do seu Tokken Esteborg Members para validar o acesso.
+
+Cole o seu tokken aqui embaixo ⬇️
+
+Se ainda não tiver, você pode obtê-lo ou recuperá-lo em:
+https://membersvip.esteborg.live/#miembrosvip`,
+  fr: `Ravi de te voir ici ! 😊 Avant de commencer l’évaluation avancée de ton ERP, j’ai besoin de ton Tokken Esteborg Members pour valider ton accès.
+
+Colle ton token ci-dessous ⬇️
+
+Si tu n’en as pas encore, tu peux l’obtenir ou le récupérer sur :
+https://membersvip.esteborg.live/#miembrosvip`,
+  it: `Che bello vederti qui! 😊 Prima di iniziare la valutazione avanzata del tuo ERP ho bisogno del tuo Tokken Esteborg Members per convalidare l’accesso.
+
+Incolla il tuo tokken qui sotto ⬇️
+
+Se non ce l’hai ancora, puoi ottenerlo o recuperarlo su:
+https://membersvip.esteborg.live/#miembrosvip`,
+  de: `Wie schön, dich hier zu sehen! 😊 Bevor wir mit deiner erweiterten ERP-Bewertung starten, brauche ich dein Esteborg Members Tokken zur Zugriffsbestätigung.
+
+Füge dein Tokken unten ein ⬇️
+
+Wenn du es noch nicht hast, kannst du es hier erhalten oder wiederherstellen:
+https://membersvip.esteborg.live/#miembrosvip`,
+};
 
 export function registerErpevRoutes(app, openai) {
   app.post("/api/modules/erpev", async (req, res) => {
@@ -20,14 +59,14 @@ export function registerErpevRoutes(app, openai) {
 
       const tokenResult = validateTokken(effectiveToken);
 
-      // Si el Tokken NO es válido, respondemos igual que IA: pedir Tokken
+      const langKey =
+        typeof lang === "string" && FALLBACK_BY_LANG[lang]
+          ? lang
+          : "es";
+
+      // 🔐 Tokken inválido / ausente → mensaje de "pide tu Tokken"
       if (tokenResult.status !== "valid") {
-        const fallbackReply =
-          "¡Qué gusto saludarte! 😊 Antes de entrar a tu diagnóstico avanzado de Sistemas ERP necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
-          "Si aún no tienes token, puedes obtenerlo o recuperarlo en:\n" +
-          "https://membersvip.esteborg.live/#miembrosvip\n\n" +
-          "1️⃣ Pega aquí tu Tokken Esteborg Members.\n" +
-          "2️⃣ Después dime cómo se llama tu empresa y en qué país opera.";
+        const fallbackReply = FALLBACK_BY_LANG[langKey];
 
         return res.json({
           module: "erpev",
@@ -37,6 +76,7 @@ export function registerErpevRoutes(app, openai) {
         });
       }
 
+      // ✅ Tokken válido y sin mensaje → error de cliente
       if (!message || typeof message !== "string") {
         return res.status(400).json({
           error: "missing_message",
@@ -44,11 +84,12 @@ export function registerErpevRoutes(app, openai) {
         });
       }
 
-      const reply = await getErpEvalReply(openai, {
+      // ✅ Tokken válido y mensaje correcto → llamamos al cerebro ERPev
+      const reply = await getErpevReply(openai, {
         message,
         history,
         userName,
-        lang,
+        lang: langKey,
       });
 
       return res.json({
@@ -62,7 +103,7 @@ export function registerErpevRoutes(app, openai) {
       return res.status(500).json({
         error: "internal_error",
         message:
-          "Ocurrió un error inesperado en el módulo de Evaluación Avanzada de Sistemas ERP.",
+          "Ocurrió un error inesperado en el módulo Esteborg ERPev (Evaluación avanzada de sistemas ERP).",
       });
     }
   });
