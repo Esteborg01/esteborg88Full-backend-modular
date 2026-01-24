@@ -6,22 +6,43 @@ import { getIaVipComReply } from "../services/iavipcomService.mjs";
 export function registerIaVipComRoutes(app, openai) {
   app.post("/api/modules/iavipcom", async (req, res) => {
     try {
-      const { message, rawToken, userName, history } = req.body || {};
+      // Aceptamos el token tanto en rawToken (como Com7) como en token/header
+      const {
+        message,
+        rawToken,
+        token: bodyToken,
+        userName,
+        history,
+        lang,
+      } = req.body || {};
 
-      const tokenResult = validateTokken(rawToken);
+      const headerToken = req.headers["x-esteborg-token"];
+      const effectiveToken = rawToken || bodyToken || headerToken;
 
+      const tokenResult = validateTokken(effectiveToken);
+
+      // ❌ Tokken inválido / vencido / ausente → mensaje pidiendo Tokken
       if (tokenResult.status !== "valid") {
         const fallbackReply =
-          "¡Qué gusto saludarte! 😊 Puedes hablarme o escribirme.\n" +
-          "Antes de comenzar tu entrenamiento en Inteligencia Artificial necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
-          "Pégalo aquí abajo ⬇️\n\n" +
-          "Si aún no tienes token, puedes obtenerlo o recuperarlo en:\nhttps://membersvip.esteborg.live/#miembrosvip";
+          "¡Qué gusto saludarte! 😊 Antes de entrar a tu entrenamiento necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
+          "Si aún no tienes token, puedes obtenerlo o recuperarlo en:\n" +
+          "https://membersvip.esteborg.live/#miembrosvip\n\n" +
+          "1️⃣ Pega aquí tu Tokken Esteborg Members.\n" +
+          "2️⃣ Después dime cómo te llamas y qué quieres lograr con IA en los próximos 90 días.";
 
         return res.json({
           module: "iavipcom",
           reply: fallbackReply,
-          tokenStatus: "invalid",
+          tokenStatus: tokenResult.status,
           tokenInfo: tokenResult,
+        });
+      }
+
+      // ✅ Tokken válido → seguimos con el flujo normal
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({
+          error: "missing_message",
+          message: "Falta el mensaje del usuario.",
         });
       }
 
@@ -29,20 +50,21 @@ export function registerIaVipComRoutes(app, openai) {
         message,
         history,
         userName,
+        lang,
       });
 
       return res.json({
         module: "iavipcom",
         reply,
         tokenStatus: "valid",
-        tokenInfo: tokenResult.raw,
+        tokenInfo: tokenResult.tokenInfo,
       });
     } catch (err) {
       console.error("❌ Error en /api/modules/iavipcom:", err);
       return res.status(500).json({
         error: "internal_error",
         message:
-          "Ocurrió un error inesperado en el módulo Esteborg IA (Coach Profesional de Inteligencia Artificial).",
+          "Ocurrió un error inesperado en el módulo Esteborg IA - Despliega todo tu poder.",
       });
     }
   });
