@@ -30,19 +30,30 @@ export function registerDemoRoutes(app, openai) {
           ? maxDemoInteractions
           : MAX_STEPS;
 
+      // Paso actual para el cerebro (service)
+      // Preferimos demoStep si viene del front; si no, usamos (interactionCount + 1)
+      const currentStepForService =
+        typeof demoStep === "number" && demoStep > 0
+          ? demoStep
+          : interactionCount + 1;
+
       const remainingInteractions = Math.max(0, maxSteps - interactionCount);
 
-      // Llamamos al servicio que habla con OpenAI
-      const reply = await getDemoWelcomeReply(openai, {
+      // Llamamos al servicio que habla con OpenAI (nuevo cerebro)
+      const serviceResult = await getDemoWelcomeReply(openai, {
         message,
         history: safeHistory,
         userName,
         lang,
-        interactionCount,
-        remainingInteractions,
-        demoStep,
+        demoStep: currentStepForService,
         maxDemoInteractions: maxSteps,
       });
+
+      // El service nuevo regresa un objeto, pero por si acaso mantenemos compatibilidad
+      const replyText =
+        typeof serviceResult === "string"
+          ? serviceResult
+          : serviceResult?.reply;
 
       // Ya se generó respuesta -> contamos esta como una interacción más
       const newInteractionCount = interactionCount + 1;
@@ -51,18 +62,22 @@ export function registerDemoRoutes(app, openai) {
       const demoStatus = remainingAfter <= 0 ? "ended" : "active";
 
       // 🔹 Métricas del demo
-      trackDemoInteraction({
-        req,
-        step: newInteractionCount,
-        status: demoStatus,
-        lang: lang || "es",
-        remaining: remainingAfter,
-        userName,
-      });
+      try {
+        trackDemoInteraction({
+          req,
+          step: newInteractionCount,
+          status: demoStatus,
+          lang: lang || "es",
+          remaining: remainingAfter,
+          userName,
+        });
+      } catch (metricErr) {
+        console.warn("⚠ Error al registrar métricas de demo:", metricErr);
+      }
 
       // Respondemos al frontend
       return res.json({
-        reply,
+        reply: replyText,
         demoStatus,
         interactionCount: newInteractionCount,
         remainingInteractions: remainingAfter,
