@@ -1,4 +1,5 @@
 // src/modules/comunicaRoutes.mjs
+
 import { validateTokken } from "../utils/tokken.mjs";
 import { getCom7Reply } from "../services/comunicaService.mjs";
 
