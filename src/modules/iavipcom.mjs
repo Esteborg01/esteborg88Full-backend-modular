@@ -6,22 +6,23 @@ import { getIaVipComReply } from "../services/iavipcomService.mjs";
 export function registerIaVipComRoutes(app, openai) {
   app.post("/api/modules/iavipcom", async (req, res) => {
     try {
-      // Aceptamos el token tanto en rawToken (como Com7) como en token/header
       const {
         message,
         rawToken,
         token: bodyToken,
-        userName,
         history,
+        userName,
         lang,
       } = req.body || {};
 
+      // También acepta token en header
       const headerToken = req.headers["x-esteborg-token"];
       const effectiveToken = rawToken || bodyToken || headerToken;
 
+      // Validación del Tokken
       const tokenResult = validateTokken(effectiveToken);
 
-      // ❌ Tokken inválido / vencido / ausente → mensaje pidiendo Tokken
+      // Tokken inválido → mensaje estándar
       if (tokenResult.status !== "valid") {
         const fallbackReply =
           "¡Qué gusto saludarte! 😊 Antes de entrar a tu entrenamiento necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
@@ -38,7 +39,7 @@ export function registerIaVipComRoutes(app, openai) {
         });
       }
 
-      // ✅ Tokken válido → seguimos con el flujo normal
+      // Validar mensaje
       if (!message || typeof message !== "string") {
         return res.status(400).json({
           error: "missing_message",
@@ -46,6 +47,7 @@ export function registerIaVipComRoutes(app, openai) {
         });
       }
 
+      // Procesar respuesta TURBO
       const reply = await getIaVipComReply(openai, {
         message,
         history,
