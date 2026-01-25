@@ -54,9 +54,11 @@ export function registerErpevRoutes(app, openai) {
         lang,
       } = req.body || {};
 
+      // También aceptamos token en header para unificar con otros módulos
       const headerToken = req.headers["x-esteborg-token"];
       const effectiveToken = rawToken || bodyToken || headerToken;
 
+      // Validar Tokken Esteborg Members
       const tokenResult = validateTokken(effectiveToken);
 
       const langKey =
@@ -76,7 +78,7 @@ export function registerErpevRoutes(app, openai) {
         });
       }
 
-      // ✅ Tokken válido y sin mensaje → error de cliente
+      // ✅ Tokken válido pero sin mensaje → error de cliente
       if (!message || typeof message !== "string") {
         return res.status(400).json({
           error: "missing_message",
