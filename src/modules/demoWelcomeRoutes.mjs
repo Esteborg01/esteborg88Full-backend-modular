@@ -19,68 +19,54 @@ export function registerDemoRoutes(app, openai) {
       // Historial seguro
       const safeHistory = Array.isArray(history) ? history : [];
 
-      // Contar cuántas respuestas del assistant ya hubo
-      let interactionCount = safeHistory.filter(
-        (msg) => msg && msg.role === "assistant"
-      ).length;
+      // Paso que manda el frontend (1..14). Si no viene, asumimos 1.
+      const stepFromClient =
+        typeof demoStep === "number" && demoStep > 0 ? demoStep : 1;
 
-      // Límite efectivo de la demo (si el front manda otro valor, lo respetamos)
+      // Límite efectivo de la demo
       const maxSteps =
         typeof maxDemoInteractions === "number" && maxDemoInteractions > 0
           ? maxDemoInteractions
           : MAX_STEPS;
 
-      // Paso actual para el cerebro (service)
-      // Preferimos demoStep si viene del front; si no, usamos (interactionCount + 1)
-      const currentStepForService =
-        typeof demoStep === "number" && demoStep > 0
-          ? demoStep
-          : interactionCount + 1;
-
-      const remainingInteractions = Math.max(0, maxSteps - interactionCount);
-
-      // Llamamos al servicio que habla con OpenAI (nuevo cerebro)
-      const serviceResult = await getDemoWelcomeReply(openai, {
+      // Llamamos al cerebro TURBO multiidioma
+      const result = await getDemoWelcomeReply(openai, {
         message,
-        history: safeHistory,
         userName,
+        history: safeHistory,
         lang,
-        demoStep: currentStepForService,
+        demoStep: stepFromClient,
         maxDemoInteractions: maxSteps,
       });
 
-      // El service nuevo regresa un objeto, pero por si acaso mantenemos compatibilidad
-      const replyText =
-        typeof serviceResult === "string"
-          ? serviceResult
-          : serviceResult?.reply;
+      const {
+        reply,
+        demoStatus = "active",
+        interactionCount = stepFromClient,
+        remainingInteractions = Math.max(maxSteps - stepFromClient, 0),
+        effectiveLang,
+      } = result || {};
 
-      // Ya se generó respuesta -> contamos esta como una interacción más
-      const newInteractionCount = interactionCount + 1;
-      const remainingAfter = Math.max(0, maxSteps - newInteractionCount);
-
-      const demoStatus = remainingAfter <= 0 ? "ended" : "active";
-
-      // 🔹 Métricas del demo
+      // 🔹 Métricas del demo (no debe romper nada si falla)
       try {
         trackDemoInteraction({
           req,
-          step: newInteractionCount,
+          step: interactionCount,
           status: demoStatus,
-          lang: lang || "es",
-          remaining: remainingAfter,
+          lang: effectiveLang || lang || "es",
+          remaining: remainingInteractions,
           userName,
         });
       } catch (metricErr) {
         console.warn("⚠ Error al registrar métricas de demo:", metricErr);
       }
 
-      // Respondemos al frontend
+      // Respuesta al frontend (lo que consume tu index perfecto)
       return res.json({
-        reply: replyText,
+        reply,
         demoStatus,
-        interactionCount: newInteractionCount,
-        remainingInteractions: remainingAfter,
+        interactionCount,
+        remainingInteractions,
       });
     } catch (err) {
       console.error("❌ Error en /api/demo/welcome:", err);
