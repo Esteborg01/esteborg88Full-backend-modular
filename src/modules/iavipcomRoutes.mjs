@@ -1,73 +1,36 @@
-// src/modules/iavipcom.mjs
-
-import { validateTokken } from "../utils/tokken.mjs";
+// iavipcomRoutes.mjs
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
+import { validateTokken } from "../utils/tokkenValidator.mjs";
 
 export function registerIaVipComRoutes(app, openai) {
   app.post("/api/modules/iavipcom", async (req, res) => {
     try {
-      const {
-        message,
-        rawToken,
-        token: bodyToken,
-        history,
-        userName,
-        lang,
-      } = req.body || {};
+      const { message, rawToken, history = [], userName, lang = "es" } = req.body;
 
-      // También acepta token en header
-      const headerToken = req.headers["x-esteborg-token"];
-      const effectiveToken = rawToken || bodyToken || headerToken;
-
-      // Validación del Tokken
-      const tokenResult = validateTokken(effectiveToken);
-
-      // Tokken inválido → mensaje estándar
-      if (tokenResult.status !== "valid") {
-        const fallbackReply =
-          "¡Qué gusto saludarte! 😊 Antes de entrar a tu entrenamiento necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
-          "Si aún no tienes token, puedes obtenerlo o recuperarlo en:\n" +
-          "https://membersvip.esteborg.live/#miembrosvip\n\n" +
-          "1️⃣ Pega aquí tu Tokken Esteborg Members.\n" +
-          "2️⃣ Después dime cómo te llamas y qué quieres lograr con IA en los próximos 90 días.";
-
+      const tokenStatus = validateTokken(rawToken);
+      if (!tokenStatus.valid) {
         return res.json({
-          module: "iavipcom",
-          reply: fallbackReply,
-          tokenStatus: tokenResult.status,
-          tokenInfo: tokenResult,
+          reply: "Necesito tu Tokken Esteborg Members para continuar.",
+          tokenStatus: "invalid",
+          tokenInfo: tokenStatus
         });
       }
 
-      // Validar mensaje
-      if (!message || typeof message !== "string") {
-        return res.status(400).json({
-          error: "missing_message",
-          message: "Falta el mensaje del usuario.",
-        });
-      }
-
-      // Procesar respuesta TURBO
       const reply = await getIaVipComReply(openai, {
         message,
         history,
         userName,
-        lang,
+        lang
       });
 
       return res.json({
-        module: "iavipcom",
         reply,
         tokenStatus: "valid",
-        tokenInfo: tokenResult.tokenInfo,
+        tokenInfo: tokenStatus
       });
     } catch (err) {
-      console.error("❌ Error en /api/modules/iavipcom:", err);
-      return res.status(500).json({
-        error: "internal_error",
-        message:
-          "Ocurrió un error inesperado en el módulo Esteborg IA - Despliega todo tu poder.",
-      });
+      console.error("Error IA VIP:", err);
+      res.status(500).json({ error: "Error interno en IA VIP." });
     }
   });
 }
