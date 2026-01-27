@@ -1,6 +1,7 @@
 // iavipcomRoutes.mjs
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
-import { validateTokken } from "../../utils/tokkenValidator.mjs";
+// src/modules/iavipcomRoutes.mjs
+import { validateTokken } from "../utils/tokken.mjs";
 
 export function registerIaVipComRoutes(app, openai) {
   app.post("/api/modules/iavipcom", async (req, res) => {
