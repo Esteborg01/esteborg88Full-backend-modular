@@ -1,4 +1,4 @@
-// src/modules/iavipcomRoutes.mjs
+// src/modules/iavipcom.mjs
 
 import { validateTokken } from "../utils/tokken.mjs";
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
@@ -10,29 +10,44 @@ export function registerIaVipComRoutes(app, openai) {
         message,
         rawToken,
         token: bodyToken,
-        history = [],
+        history,
         userName,
-        lang = "es",
+        lang,
       } = req.body || {};
 
-      // 1) Elegimos el token a usar
-      const tokenToUse = rawToken || bodyToken || "";
+      // También acepta token en header
+      const headerToken = req.headers["x-esteborg-token"];
+      const effectiveToken = rawToken || bodyToken || headerToken;
 
-      // 2) Validamos el token usando la utilidad compartida
-      const tokenResult = validateTokken(tokenToUse);
+      // Validación del Tokken
+      const tokenResult = validateTokken(effectiveToken);
 
-      if (!tokenToUse || !tokenResult || tokenResult.valid === false) {
-        // Respuesta cuando el token no es válido o falta
-        return res.status(401).json({
+      // Tokken inválido → mensaje estándar
+      if (tokenResult.status !== "valid") {
+        const fallbackReply =
+          "¡Qué gusto saludarte! 😊 Antes de entrar a tu entrenamiento necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
+          "Si aún no tienes token, puedes obtenerlo o recuperarlo en:\n" +
+          "https://membersvip.esteborg.live/#miembrosvip\n\n" +
+          "1️⃣ Pega aquí tu Tokken Esteborg Members.\n" +
+          "2️⃣ Después dime cómo te llamas y qué quieres lograr con IA en los próximos 90 días.";
+
+        return res.json({
           module: "iavipcom",
-          reply:
-            "Necesito tu Tokken Esteborg Members para continuar con Esteborg IA – Despliega todo tu poder.",
-          tokenStatus: "invalid",
-          tokenInfo: tokenResult || null,
+          reply: fallbackReply,
+          tokenStatus: tokenResult.status,
+          tokenInfo: tokenResult,
         });
       }
 
-      // 3) Obtenemos la respuesta del Cerebro IA VIP
+      // Validar mensaje
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({
+          error: "missing_message",
+          message: "Falta el mensaje del usuario.",
+        });
+      }
+
+      // Procesar respuesta TITAN–IMPERIAL
       const reply = await getIaVipComReply(openai, {
         message,
         history,
@@ -40,12 +55,11 @@ export function registerIaVipComRoutes(app, openai) {
         lang,
       });
 
-      // 4) Respondemos al front
       return res.json({
         module: "iavipcom",
         reply,
         tokenStatus: "valid",
-        tokenInfo: tokenResult.tokenInfo || tokenResult,
+        tokenInfo: tokenResult.tokenInfo,
       });
     } catch (err) {
       console.error("❌ Error en /api/modules/iavipcom:", err);
