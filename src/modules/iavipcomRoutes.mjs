@@ -35,3 +35,30 @@ export function registerIaVipComRoutes(app, openai) {
     }
   });
 }
+// Valida el formato básico del Tokken Esteborg Members
+export function validateTokken(rawToken) {
+  if (!rawToken || typeof rawToken !== "string") {
+    return {
+      valid: false,
+      reason: "no_token",
+    };
+  }
+
+  const normalized = rawToken.trim();
+
+  // Reglas básicas: mínimo 12 caracteres y sin espacios
+  const hasSpaces = /\s/.test(normalized);
+  const isMinLength = normalized.length >= 12;
+
+  if (!isMinLength || hasSpaces) {
+    return {
+      valid: false,
+      reason: "format_error",
+    };
+  }
+
+  return {
+    valid: true,
+    reason: "ok",
+  };
+}
