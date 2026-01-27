@@ -434,6 +434,7 @@ function getStagePrompt(lang, step, maxSteps) {
     return (
       "Esta es la ÚLTIMA respuesta de una demo gratuita de 14 pasos. " +
       "Debes responder brevemente al último mensaje de la persona, darle un resumen ejecutivo de su estilo de comunicación (cómo reacciona, cómo escucha, cómo pone límites y cómo lidera bajo presión) y recomendar de forma clara UNO de los tres programas Esteborg como siguiente paso más inteligente: Comunicación y Liderazgo, Ventas PRO o IA aplicada profesionalmente. " +
+      "Haz tu resumen ejecutivo en un máximo de 6–8 líneas ANTES del bloque final. " +
       "Deja claro que aquí termina la demo gratuita. " +
       "Después de tu resumen y tu recomendación, DEBES agregar EXACTAMENTE el siguiente bloque de cierre, sin traducirlo ni modificarlo:\n\n" +
       "\"Porque no es lo mismo hablar claro… que comprar problemas disfrazados de calma.\n\n" +
@@ -444,9 +445,6 @@ function getStagePrompt(lang, step, maxSteps) {
       "NO hagas más preguntas y NO invites a seguir interactuando dentro de esta demo."
     );
   }
-
-  return "";
-}
 
 /* ============================================================
    5) FUNCIÓN PRINCIPAL
@@ -484,11 +482,18 @@ export async function getDemoWelcomeReply(
     { role: "user", content: userContent },
   ];
 
+  // 👉 tokens dinámicos según etapa
+  const isFinal = currentStep >= maxSteps;
+  const isPenultimate = currentStep === maxSteps - 1;
+
+  const maxTokens =
+    isFinal ? 650 : isPenultimate ? 450 : 320; // diagnóstico corto, cierre largo
+
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
-      max_tokens: 330,
+      max_tokens: maxTokens,
     });
 
     const reply =
