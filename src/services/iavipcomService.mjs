@@ -2,10 +2,7 @@
 
 import { getIaVipComSystemPrompt } from "./iavipcomBrain.mjs";
 
-export async function getIaVipComReply(
-  openai,
-  { message, history = [], userName, lang = "es" }
-) {
+export async function getIaVipComReply(openai, { message, history = [], userName, lang = "es" }) {
   const languageLabels = {
     es: "español",
     en: "inglés",
@@ -21,18 +18,20 @@ export async function getIaVipComReply(
 
   const safeHistory = Array.isArray(history) ? history : [];
 
+  const userContent = [
+    userName ? `Nombre del usuario: ${userName}` : null,
+    `Idioma interfaz: ${languageLabel} (${lang})`,
+    "",
+    `Mensaje del usuario:`,
+    message,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const messages = [
     { role: "system", content: systemPrompt },
     ...safeHistory,
-    {
-      role: "user",
-      content: userName
-        ? `Nombre del usuario: ${userName}
-Idioma interfaz: ${languageLabel} (${lang})
-Mensaje: ${message}`
-        : `Idioma interfaz: ${languageLabel} (${lang})
-Mensaje: ${message}`,
-    },
+    { role: "user", content: userContent },
   ];
 
   const completion = await openai.chat.completions.create({
@@ -42,7 +41,7 @@ Mensaje: ${message}`,
 
   const reply =
     completion?.choices?.[0]?.message?.content ||
-    "No tengo respuesta en este momento.";
+    "Por ahora no puedo generar una respuesta. Intenta reformular tu mensaje o vuelve a intentarlo en unos momentos.";
 
   return reply;
 }
