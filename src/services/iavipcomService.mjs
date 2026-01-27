@@ -1,29 +1,48 @@
-// iavipcomService.mjs
-import { iavipcomBrain } from "./iavipcomBrain.mjs";
+// src/services/iavipcomService.mjs
 
-export async function getIaVipComReply(openai, { message, history, userName, lang }) {
-  const systemPrompt = `${iavipcomBrain}
+import { getIaVipComSystemPrompt } from "./iavipcomBrain.mjs";
 
-Reglas adicionales:
-- Dirígete al usuario por su nombre si lo proporciona.
-- Responde en el idioma solicitado: ${lang}.
-- Mantén el tono VIP Premium en todo momento.
-- Si el usuario se desvía del curso, redirígelo con elegancia.
+export async function getIaVipComReply(
+  openai,
+  { message, history = [], userName, lang = "es" }
+) {
+  const languageLabels = {
+    es: "español",
+    en: "inglés",
+    pt: "portugués",
+    fr: "francés",
+    it: "italiano",
+    de: "alemán",
+  };
 
-INICIO DE CONTEXTO DEL ALUMNO:
-Nombre: ${userName || "Sin nombre"}
-`;
+  const languageLabel = languageLabels[lang] || languageLabels.es;
+
+  const systemPrompt = getIaVipComSystemPrompt();
+
+  const safeHistory = Array.isArray(history) ? history : [];
 
   const messages = [
     { role: "system", content: systemPrompt },
-    ...history,
-    { role: "user", content: message }
+    ...safeHistory,
+    {
+      role: "user",
+      content: userName
+        ? `Nombre del usuario: ${userName}
+Idioma interfaz: ${languageLabel} (${lang})
+Mensaje: ${message}`
+        : `Idioma interfaz: ${languageLabel} (${lang})
+Mensaje: ${message}`,
+    },
   ];
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
-    messages
+    messages,
   });
 
-  return completion.choices[0].message.content;
+  const reply =
+    completion?.choices?.[0]?.message?.content ||
+    "No tengo respuesta en este momento.";
+
+  return reply;
 }
