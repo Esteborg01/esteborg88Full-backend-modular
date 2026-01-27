@@ -18,7 +18,7 @@ import { registerErpevRoutes } from "./src/modules/erpevRoutes.mjs";
 import { registerDemoRoutes } from "./src/modules/demoWelcomeRoutes.mjs";
 import { registerVoiceRoutes } from "./src/modules/voiceRoutes.mjs";
 import { registerTokkenRoutes } from "./src/modules/tokkenRoutes.mjs";
-import { registerIaVipComRoutes } from "./src/modules/iavipcom.mjs";
+import { registerIaVipComRoutes } from "./src/modules/iavipcomRoutes.mjs";
 
 dotenv.config();
 
