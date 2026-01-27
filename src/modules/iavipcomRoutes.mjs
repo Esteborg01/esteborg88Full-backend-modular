@@ -35,14 +35,6 @@ export function registerIaVipComRoutes(app, openai) {
     }
   });
 }
-// Valida el formato básico del Tokken Esteborg Members
-export function validateTokken(rawToken) {
-  if (!rawToken || typeof rawToken !== "string") {
-    return {
-      valid: false,
-      reason: "no_token",
-    };
-  }
 
   const normalized = rawToken.trim();
 
