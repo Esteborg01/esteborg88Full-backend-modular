@@ -194,7 +194,7 @@ function getStagePrompt(lang, step, maxSteps) {
         );
       case "it":
         return (
-          "Questa è la PRIMA risposta della demo. Devi dire in modo chiaro che questa conversazione é privata e confidenziale e che ciò che la persona scrive qui rimane in questo spazio. " +
+          "Questa è la PRIMA risposta della demo. Devi dire in modo chiaro che questa conversazione è privata e confidenziale e che ciò che la persona scrive qui rimane in questo espaço. " +
           "Poi riconosci brevemente ciò che vuole migliorare e fai la PRIMA domanda di diagnosi su come reagisce quando qualcuno le dice qualcosa che non le piace. " +
           "Sii breve, umano e chiaro, e fai SOLO quella domanda."
         );
@@ -446,6 +446,9 @@ function getStagePrompt(lang, step, maxSteps) {
     );
   }
 
+  return "";
+}
+
 /* ============================================================
    5) FUNCIÓN PRINCIPAL
    ============================================================ */
@@ -482,12 +485,11 @@ export async function getDemoWelcomeReply(
     { role: "user", content: userContent },
   ];
 
-  // 👉 tokens dinámicos según etapa
+  // tokens dinámicos según etapa
   const isFinal = currentStep >= maxSteps;
   const isPenultimate = currentStep === maxSteps - 1;
 
-  const maxTokens =
-    isFinal ? 650 : isPenultimate ? 450 : 320; // diagnóstico corto, cierre largo
+  const maxTokens = isFinal ? 650 : isPenultimate ? 450 : 320;
 
   try {
     const completion = await openai.chat.completions.create({
