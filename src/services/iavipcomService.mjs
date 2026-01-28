@@ -2,7 +2,15 @@
 
 export async function getIaVipComReply(
   openai,
-  { message, history = [], userName, lang = "es" }
+  {
+    message,
+    history = [],
+    userName,
+    lang = "es",
+    token,
+    tokenStatus,
+    tokenInfo,
+  }
 ) {
   const languageLabels = {
     es: "español",
