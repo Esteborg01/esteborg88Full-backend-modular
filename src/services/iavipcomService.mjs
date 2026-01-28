@@ -1,47 +1,90 @@
 // src/services/iavipcomService.mjs
 
 import { getIaVipComSystemPrompt } from "./iavipcomBrain.mjs";
+import { getUserProgress, saveUserProgress } from "../utils/progressStore.mjs";
+import OpenAI from "openai";
 
-export async function getIaVipComReply(openai, { message, history = [], userName, lang = "es" }) {
-  const languageLabels = {
-    es: "español",
-    en: "inglés",
-    pt: "portugués",
-    fr: "francés",
-    it: "italiano",
-    de: "alemán",
-  };
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-  const languageLabel = languageLabels[lang] || languageLabels.es;
-
+// Función principal: atender mensajes del usuario
+export async function processIaVipComMessage({ message, userEmail }) {
   const systemPrompt = getIaVipComSystemPrompt();
 
-  const safeHistory = Array.isArray(history) ? history : [];
+  // Cargar progreso del usuario
+  const progress = await getUserProgress(userEmail);
 
-  const userContent = [
-    userName ? `Nombre del usuario: ${userName}` : null,
-    `Idioma interfaz: ${languageLabel} (${lang})`,
-    "",
-    `Mensaje del usuario:`,
-    message,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const messages = [
+  // Construcción del contexto de conversación
+  const conversation = [
     { role: "system", content: systemPrompt },
-    ...safeHistory,
-    { role: "user", content: userContent },
+    { role: "assistant", content: progress.lastAssistantMessage || "" },
+    { role: "user", content: message },
   ];
 
-  const completion = await openai.chat.completions.create({
+  const completion = await client.chat.completions.create({
     model: "gpt-4o-mini",
-    messages,
+    messages: conversation,
+    temperature: 0.9,
   });
 
-  const reply =
-    completion?.choices?.[0]?.message?.content ||
-    "Por ahora no puedo generar una respuesta. Intenta reformular tu mensaje o vuelve a intentarlo en unos momentos.";
+  const assistantResponse = completion.choices[0].message.content;
 
-  return reply;
+  // Detectar eventos internos
+  await handleEmbeddedEvents(assistantResponse, userEmail);
+
+  // Guardar la última respuesta para continuidad
+  await saveUserProgress(userEmail, {
+    lastAssistantMessage: assistantResponse,
+  });
+
+  return assistantResponse;
+}
+
+// ======================================================
+// MANEJO DE EVENTOS BACKEND
+// ======================================================
+
+async function handleEmbeddedEvents(aiText, userEmail) {
+  if (!aiText) return;
+
+  const eventRegex = /\[ESTEBORG_EVENT([^]+?)\]/g;
+  let match;
+
+  while ((match = eventRegex.exec(aiText)) !== null) {
+    const payload = match[1]
+      .replace("type=", '"type":')
+      .replace("module=", '"module":')
+      .replace("certification=", '"certification":');
+
+    const jsonFormatted = "{" + payload + "}";
+
+    try {
+      const data = JSON.parse(jsonFormatted);
+
+      await registerEvent(userEmail, data);
+    } catch (err) {
+      console.error("❌ Error parsing ESTEBORG_EVENT:", err);
+    }
+  }
+}
+
+// Registro básico en progreso.  
+// Si mañana quieres moverlo a BD real, este diseño lo permite.
+async function registerEvent(userEmail, eventData) {
+  const progress = await getUserProgress(userEmail);
+
+  if (eventData.type === "module_completed") {
+    if (!progress.modulesCompleted) progress.modulesCompleted = [];
+
+    if (!progress.modulesCompleted.includes(eventData.module)) {
+      progress.modulesCompleted.push(eventData.module);
+    }
+  }
+
+  if (eventData.type === "program_completed") {
+    progress.certified = true;
+  }
+
+  await saveUserProgress(userEmail, progress);
 }
