@@ -1,41 +1,66 @@
 // src/modules/iavipcomRoutes.mjs
-// =======================================================
-//            Rutas VIP para IA Premium Com
-// =======================================================
 
 import { Router } from "express";
-import { getIaVipComReply } from "../services/iavipcomService.mjs";
 import { validateTokken } from "../utils/tokken.mjs";
+import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
-const router = Router();
+export function registerIaVipComRoutes(app, openai) {
+  const router = Router();
 
-// =========================================
-// POST /api/iavipcom
-// =========================================
+  // Ruta que usa el frontend:
+  // POST /modules/iavipcom
+  router.post("/iavipcom", async (req, res) => {
+    try {
+      const {
+        message,
+        rawToken,
+        token: bodyToken,
+        history,
+        userName,
+        lang,
+      } = req.body || {};
 
-router.post("/iavipcom", async (req, res) => {
-  try {
-    const { module, message, tokken } = req.body || {};
+      // Aceptamos token en cualquiera de los dos campos
+      const token = rawToken || bodyToken || "";
 
-    const valid = validateTokken(tokken);
-    if (!valid.ok) {
-      return res.status(401).json({ error: "invalid_token" });
+      const tokenResult = validateTokken(token);
+
+      if (!tokenResult.ok) {
+        return res.status(401).json({
+          module: "iavipcom",
+          error: "invalid_token",
+          tokenStatus: "invalid",
+          message: "Tokken Esteborg Members inválido o no proporcionado.",
+        });
+      }
+
+      const reply = await getIaVipComReply(openai, {
+        message,
+        history,
+        userName,
+        lang,
+      });
+
+      const tokenInfo =
+        tokenResult.tokenInfo || tokenResult.data || { email: "desconocido" };
+
+      return res.json({
+        module: "iavipcom",
+        reply,
+        tokenStatus: "valid",
+        tokenInfo,
+      });
+    } catch (err) {
+      console.error("❌ Error en /modules/iavipcom:", err);
+      return res.status(500).json({
+        module: "iavipcom",
+        error: "internal_error",
+        message:
+          "Ocurrió un error inesperado en el módulo Esteborg IA - Despliega todo tu poder.",
+      });
     }
+  });
 
-    const reply = await getIaVipComReply({
-      module,
-      userMessage: message
-    });
-
-    return res.json({ reply });
-
-  } catch (err) {
-    console.error("❌ Error en /iavipcom:", err);
-    return res.status(500).json({ error: "internal_error" });
-  }
-});
-
-// Registrar ruta
-export function registerIaVipComRoutes(app) {
-  app.use("/api", router);
+  // Igual que en tokkenRoutes: montamos el router bajo /modules
+  app.use("/modules", router);
 }
