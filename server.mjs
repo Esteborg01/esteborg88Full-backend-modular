@@ -34,6 +34,13 @@ app.use(
 );
 app.use(express.json({ limit: "2mb" }));
 
+// 🔁 Compatibilidad: aceptar /modules/* y redirigir interno a /api/modules/*
+app.use("/modules", (req, res, next) => {
+  // Ej: /modules/iavipcom  ->  /api/modules/iavipcom
+  req.url = "/api" + req.url;
+  next();
+});
+
 // Middlewares compartidos (los que ya usaban los otros GPTs)
 app.use(compressHistoryMiddleware);
 app.use(rateLimiter);
