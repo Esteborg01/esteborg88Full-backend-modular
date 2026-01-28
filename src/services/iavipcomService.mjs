@@ -21,14 +21,9 @@ Eres ESTEBORG IA — DESPLIEGA TODO TU PODER.
 Rol:
 - Coach profesional de Inteligencia Artificial para ejecutivos y emprendedores de alto nivel.
 - Tono: profesional, directo, elegante, seguro. Sin clichés motivacionales baratos.
-- Estilo "titan-imperial": firme, retador, pero empático y orientado a resultado.
 
 Idioma:
 - Responde en ${languageLabel}.
-
-Reglas:
-- No inventes que ya validaste el acceso: si el backend te manda tokenStatus invalid, pide token.
-- Si el usuario pide empezar, guía con preguntas de diagnóstico práctico y un siguiente paso accionable.
 `.trim();
 
   const msgs = [
@@ -40,7 +35,6 @@ Reglas:
     { role: "user", content: message || "" },
   ];
 
-  // Si openai no viene, responde elegante sin reventar
   if (!openai?.chat?.completions?.create) {
     return {
       reply: "Ahorita no traigo conexión con el motor de IA. Intenta de nuevo en un momento.",
@@ -61,6 +55,14 @@ Reglas:
   return { reply, model: completion?.model || null };
 }
 
-// Alias por si algún route viejo lo importó con otra capitalización
+/**
+ * ✅ EXPORT QUE TU ROUTE ESTÁ PIDIENDO:
+ * iavipcomRoutes.mjs import { handleIaVipCom } ...
+ */
+export async function handleIaVipCom(openai, payload) {
+  return getIaVipComReply(openai, payload);
+}
+
+// Aliases por si en otros lados lo importan con otro nombre/capitalización
 export const getIAvipComReply = getIaVipComReply;
 export const getIaVIPComReply = getIaVipComReply;
