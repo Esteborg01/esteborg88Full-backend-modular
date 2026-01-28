@@ -1,13 +1,16 @@
 // src/modules/iavipcomRoutes.mjs
+// ==============================================
+//   Rutas Esteborg IA – Despliega todo tu poder
+// ==============================================
 
 import { Router } from "express";
 import { validateTokken } from "../utils/tokken.mjs";
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
-export function registerIaVipComRoutes(app, openai) {
+export function registerIaVipComRoutes(app) {
   const router = Router();
 
-  // Ruta que usa el frontend:
+  // Ruta real que llama el front:
   // POST /modules/iavipcom
   router.post("/iavipcom", async (req, res) => {
     try {
@@ -20,7 +23,7 @@ export function registerIaVipComRoutes(app, openai) {
         lang,
       } = req.body || {};
 
-      // Aceptamos token en cualquiera de los dos campos
+      // Aceptamos el tokken en cualquiera de los dos campos
       const token = rawToken || bodyToken || "";
 
       const tokenResult = validateTokken(token);
@@ -34,8 +37,9 @@ export function registerIaVipComRoutes(app, openai) {
         });
       }
 
-      const reply = await getIaVipComReply(openai, {
-        message,
+      const reply = await getIaVipComReply({
+        module: "module1", // o el módulo que quieras por defecto
+        userMessage: message,
         history,
         userName,
         lang,
@@ -61,6 +65,6 @@ export function registerIaVipComRoutes(app, openai) {
     }
   });
 
-  // Igual que en tokkenRoutes: montamos el router bajo /modules
+  // Igual que con los otros módulos:
   app.use("/modules", router);
 }
