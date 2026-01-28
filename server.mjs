@@ -17,7 +17,6 @@ import { registerComunicaRoutes } from "./src/modules/comunicaRoutes.mjs";
 import { registerVentasRoutes } from "./src/modules/ventasRoutes.mjs";
 import { registerErpevRoutes } from "./src/modules/erpevRoutes.mjs";
 import { registerIaVipComRoutes } from "./src/modules/iavipcomRoutes.mjs";
-import { registerMetricsRoutes } from "./src/modules/metricsRoutes.mjs";
 import { registerVoiceRoutes } from "./src/modules/voiceRoutes.mjs";
 import { registerTokkenRoutes } from "./src/modules/tokkenRoutes.mjs";
 
@@ -47,7 +46,6 @@ registerComunicaRoutes(app, openai);
 registerVentasRoutes(app, openai);
 registerErpevRoutes(app, openai);
 registerIaVipComRoutes(app, openai); // <- NUEVO módulo IA VIP COM
-registerMetricsRoutes(app, openai);
 registerVoiceRoutes(app);
 registerTokkenRoutes(app);
 
