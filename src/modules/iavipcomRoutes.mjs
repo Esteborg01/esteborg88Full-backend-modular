@@ -1,42 +1,56 @@
 // src/modules/iavipcomRoutes.mjs
-import { Router } from "express";
-import { iaVipComReply } from "../services/iavipcomService.mjs";
+
 import { validateTokken } from "../utils/tokken.mjs";
+import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
-const router = Router();
+export function registerIaVipComRoutes(app, openai) {
+  // IMPORTANTE: el frontend llama a /modules/iavipcom (sin /api)
+  app.post("/modules/iavipcom", async (req, res) => {
+    try {
+      const {
+        message,
+        rawToken,
+        token: bodyToken,
+        history,
+        userName,
+        lang,
+      } = req.body || {};
 
-// POST /iavipcom
-router.post("/iavipcom", async (req, res) => {
-  try {
-    const rawToken = req.headers["x-esteborg-token"] || "";
-    const tokenData = validateTokken(rawToken);
+      const usedToken = rawToken || bodyToken || "";
 
-    if (!tokenData) {
-      return res.status(401).json({
-        error: "invalid_token",
-        message: "Tokken inválido o expirado.",
+      const tokenResult = validateTokken(usedToken);
+
+      if (!tokenResult.ok) {
+        // Mismo patrón que los otros módulos cuando el Tokken falla
+        return res.status(200).json({
+          module: "iavipcom",
+          reply:
+            "Tuvimos un problema al validar tu Tokken Esteborg Members. Verifica tu acceso o intenta de nuevo en unos momentos.",
+          tokenStatus: "invalid",
+          tokenInfo: tokenResult.tokenInfo,
+        });
+      }
+
+      const reply = await getIaVipComReply(openai, {
+        message,
+        history,
+        userName,
+        lang,
+      });
+
+      return res.status(200).json({
+        module: "iavipcom",
+        reply,
+        tokenStatus: "valid",
+        tokenInfo: tokenResult.tokenInfo,
+      });
+    } catch (err) {
+      console.error("❌ Error en /modules/iavipcom:", err);
+      return res.status(500).json({
+        error: "internal_error",
+        message:
+          "Ocurrió un error inesperado en el módulo Esteborg IA – Despliega todo tu poder.",
       });
     }
-
-    const userMessage = req.body?.message || "";
-    const lang = req.body?.lang || "ES";
-
-    const reply = await iaVipComReply({
-      userMessage,
-      lang,
-      tokenData,
-    });
-
-    return res.json(reply);
-  } catch (err) {
-    console.error("❌ Error en /iavipcom:", err);
-    return res.status(500).json({
-      error: "internal_error",
-      message: "Error interno al procesar IA VIP",
-    });
-  }
-});
-
-export function registerIaVipComRoutes(app) {
-  app.use("/", router);
+  });
 }
