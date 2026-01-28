@@ -1,17 +1,20 @@
-import jwt from "jsonwebtoken";
+// src/utils/tokken.mjs
 
-const SECRET = process.env.ESTEBORG_SECRET || "ESTEBORG_DEFAULT_SECRET";
+export function validateTokken(rawToken) {
+  if (!rawToken) {
+    return { valid: false, reason: "missing" };
+  }
 
-export function validateTokken(tokken) {
   try {
-    if (!tokken) {
-      return { valid: false, message: "Tokken no proporcionado" };
+    const json = Buffer.from(rawToken, "base64url").toString("utf8");
+    const data = JSON.parse(json);
+
+    if (!data.email) {
+      return { valid: false, reason: "invalid_payload" };
     }
 
-    const decoded = jwt.verify(tokken, SECRET);
-    return { valid: true, decoded };
+    return { valid: true, data };
   } catch (err) {
-    console.error("Error validando tokken:", err.message);
-    return { valid: false, message: "Tokken inválido" };
+    return { valid: false, reason: "decode_error" };
   }
 }
