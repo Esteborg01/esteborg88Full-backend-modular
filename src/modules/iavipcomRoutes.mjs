@@ -1,76 +1,46 @@
-// src/modules/iavipcomRoutes.mjs
-
-import { validateTokken } from "../utils/tokken.mjs";
-import { getIaVipComReply } from "../services/iavipcomService.mjs";
+import express from "express";
+import { requireVipTokken } from "../middleware/requireVipTokken.mjs";
 
 export function registerIaVipComRoutes(app, openai) {
-  app.post("/api/modules/iavipcom", async (req, res) => {
+  const router = express.Router();
+
+  // 🔐 Middleware de Tokken SOLO aquí
+  router.use(requireVipTokken);
+
+  router.post("/", async (req, res) => {
     try {
-      const body = req.body || {};
+      const { messages, language = "es" } = req.body;
 
-      // ✅ Compatibilidad con frontend (varios nombres posibles)
-      const message =
-        body.message ??
-        body.userMessage ??
-        body.text ??
-        "";
+      const isMember = req.esteborgMember === true;
 
-      const rawToken =
-        body.rawToken ??
-        body.tokken ??
-        body.token ??
-        "";
-
-      const userName =
-        body.userName ??
-        body.name ??
-        "";
-
-      const history =
-        Array.isArray(body.history) ? body.history : [];
-
-      const lang =
-        body.lang ??
-        body.language ??
-        "es";
-
-      const tokenResult = validateTokken(rawToken);
-
-      // 👇 tokken.mjs regresa { status, isValid }
-      if (tokenResult.status !== "valid" || tokenResult.isValid !== true) {
-        const fallbackReply =
-          "¡Qué gusto saludarte! 😊 Antes de empezar necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
-          "Si aún no lo tienes, puedes obtenerlo o recuperarlo aquí:\n" +
-          "https://membersvip.esteborg.live/#miembrosvip\n\n" +
-          "Pégalo aquí y arrancamos. 🔐";
-
-        return res.status(401).json({
-          module: "iavipcom",
-          reply: fallbackReply,
-          tokenStatus: "invalid",
-          tokenInfo: tokenResult,
+      // 🔒 Control demo vs VIP
+      if (!isMember) {
+        return res.json({
+          demo: true,
+          message:
+            "Estás en modo demo de Esteborg IA. Activa tu Tokken Members VIP para acceso completo.",
         });
       }
 
-      const reply = await getIaVipComReply(openai, {
-        message,
-        history,
-        userName,
-        lang,
+      // 🤖 Llamada OpenAI
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages,
+        temperature: 0.6,
       });
 
       return res.json({
-        module: "iavipcom",
-        reply,
-        tokenStatus: "valid",
-        tokenInfo: tokenResult.raw,
+        vip: true,
+        response: completion.choices[0].message.content,
       });
     } catch (err) {
-      console.error("❌ Error en /api/modules/iavipcom:", err);
+      console.error("❌ Error IA VIP:", err);
       return res.status(500).json({
-        error: "internal_error",
-        message: "Error interno en IAvipCom",
+        error: "ia_error",
+        message: "Error interno en Esteborg IA",
       });
     }
   });
+
+  app.use("/api/modules/iavipcom", router);
 }
