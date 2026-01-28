@@ -1,153 +1,54 @@
 // src/utils/tokken.mjs
+// =======================================================
+//     Generación y Validación de Tokken Esteborg
+// =======================================================
 
-const MAX_TOKEN_AGE_DAYS = 40;            // margen cómodo sobre tus 30 días
-const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;  // 5 minutos de diferencia de reloj
-
-// --- Helpers de encode/decode ---
-
-function encodeBase64Json(obj) {
-  const json = JSON.stringify(obj);
-  return Buffer.from(json, "utf8").toString("base64");
-}
-
-function decodeBase64Json(tokkenStr) {
-  if (typeof tokkenStr !== "string") {
-    throw new Error("Token debe ser string");
-  }
-
-  // Limpiamos espacios / saltos de línea
-  let normalized = tokkenStr.trim().replace(/\s+/g, "");
-
-  // Normalizamos padding para base64
-  const missing = normalized.length % 4;
-  if (missing) {
-    normalized += "=".repeat(4 - missing);
-  }
-
-  const jsonStr = Buffer.from(normalized, "base64").toString("utf8");
-  return JSON.parse(jsonStr);
-}
-
-// --- Generador: usado por tokkenRoutes.mjs ---
-
-export function generateTokkenForUser({
-  email,
-  personUid,
-  accountUid,
-  ts,
-} = {}) {
-  if (!email) {
-    throw new Error("generateTokkenForUser: email es requerido");
-  }
-
-  const payload = {
-    email,
-    // Estos pueden venir vacíos, igual que en validateTokken
-    ...(personUid ? { personUid } : {}),
-    ...(accountUid ? { accountUid } : {}),
-    ts: typeof ts === "number" ? ts : Date.now(),
-  };
-
-  const token = encodeBase64Json(payload);
-  console.log("generateTokkenForUser: payload ->", payload);
-
-  return token;
-}
-
-// --- Validador: usado por tu módulo /api/modules/comunica ---
-
-export function validateTokken(rawToken) {
-  console.log("=== validateTokken() rawToken ===", rawToken);
-
-  // Token vacío
-  if (!rawToken || typeof rawToken !== "string") {
-    console.warn("validateTokken: token vacío o no string");
-    return {
-      status: "missing",
-      reason: "empty",
-      tokenInfo: null,
+// ============================
+// GENERAR TOKEN
+// ============================
+export function generateTokkenForUser({ email, personUid = "", accountUid = "" }) {
+  try {
+    const payload = {
+      email: email || "",
+      personUid,
+      accountUid,
+      ts: Date.now()
     };
-  }
 
-  let payload;
+    const json = JSON.stringify(payload);
+    const base64 = Buffer.from(json).toString("base64url");
+
+    return base64;
+  } catch (err) {
+    console.error("❌ Error generando tokken:", err);
+    return null;
+  }
+}
+
+// ============================
+// VALIDAR TOKEN
+// ============================
+export function validateTokken(rawToken) {
+  if (!rawToken || typeof rawToken !== "string") {
+    return { ok: false, error: "no_token" };
+  }
 
   try {
-    payload = decodeBase64Json(rawToken);
-    console.log("validateTokken: Base64 JSON OK:", payload);
+    const json = Buffer.from(rawToken, "base64url").toString("utf8");
+    const data = JSON.parse(json);
+
+    if (!data.email) {
+      return { ok: false, error: "invalid_email" };
+    }
+
+    // Para VIP: aceptamos personUid y accountUid vacíos
+    return {
+      ok: true,
+      data
+    };
+
   } catch (err) {
-    console.error("❌ Error decodificando Tokken:", err);
-    return {
-      status: "invalid",
-      reason: "bad_base64_or_json",
-      tokenInfo: null,
-    };
+    console.error("❌ Error validando tokken:", err);
+    return { ok: false, error: "parse_error" };
   }
-
-  const { email, ts } = payload;
-
-  // 🔹 Solo exigimos email + ts
-  if (!email || !ts) {
-    console.warn("validateTokken: faltan campos requeridos", { email, ts });
-    return {
-      status: "invalid",
-      reason: "missing_required_claims",
-      tokenInfo: payload,
-    };
-  }
-
-  const tsMs = Number(ts);
-  if (!Number.isFinite(tsMs)) {
-    console.warn("validateTokken: ts no es numérico", { ts });
-    return {
-      status: "invalid",
-      reason: "bad_ts",
-      tokenInfo: payload,
-    };
-  }
-
-  const now = Date.now();
-  const ageMs = now - tsMs;
-
-  // Muy en el futuro → problema de reloj
-  if (ageMs < -MAX_CLOCK_SKEW_MS) {
-    console.warn("validateTokken: ts está demasiado en el futuro", {
-      tsMs,
-      now,
-    });
-    return {
-      status: "invalid",
-      reason: "future_ts",
-      tokenInfo: payload,
-    };
-  }
-
-  // Expiración por días
-  const maxAgeMs = MAX_TOKEN_AGE_DAYS * 24 * 60 * 60 * 1000;
-  if (ageMs > maxAgeMs) {
-    console.warn("validateTokken: token expirado", {
-      ageDays: ageMs / (24 * 60 * 60 * 1000),
-    });
-    return {
-      status: "expired",
-      reason: "expired",
-      tokenInfo: payload,
-    };
-  }
-
-  // 🔸 Warnings suaves (no invalidan)
-  const softMissing = {};
-  if (!payload.personUid) softMissing.personUid = payload.personUid;
-  if (!payload.accountUid) softMissing.accountUid = payload.accountUid;
-  if (Object.keys(softMissing).length) {
-    console.warn(
-      "validateTokken: token sin personUid/accountUid (permitido por ahora)",
-      softMissing
-    );
-  }
-
-  return {
-    status: "valid",
-    reason: "ok",
-    tokenInfo: payload,
-  };
 }
