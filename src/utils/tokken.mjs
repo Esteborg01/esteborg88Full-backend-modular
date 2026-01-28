@@ -1,75 +1,91 @@
 // src/utils/tokken.mjs
+// Generar y validar Tokken Esteborg Members de forma simple y consistente
 
-// Genera un Tokken en base64-url con email y metadatos opcionales
+// Genera un tokken base64 a partir de los datos del usuario
 export function generateTokkenForUser({ email, personUid = "", accountUid = "" }) {
   if (!email) {
-    throw new Error("email requerido para generar Tokken");
+    throw new Error("generateTokkenForUser: email es requerido");
   }
 
   const payload = {
     email,
-    personUid,
-    accountUid,
-    ts: Date.now(),
+    personUid: personUid || "",
+    accountUid: accountUid || "",
+    ts: Date.now(), // timestamp en ms
   };
 
   const json = JSON.stringify(payload);
-  return Buffer.from(json, "utf8").toString("base64url");
+  return Buffer.from(json, "utf8").toString("base64");
 }
 
-// Valida un Tokken generado arriba
+// Valida un tokken base64 y devuelve estatus + datos
 export function validateTokken(rawToken) {
   if (!rawToken || typeof rawToken !== "string") {
     return {
       ok: false,
-      reason: "missing_token",
+      status: "missing",
+      reason: "Tokken vacío o no enviado",
       tokenInfo: null,
     };
   }
 
-  let decoded;
+  let parsed;
   try {
-    const buf = Buffer.from(rawToken, "base64url");
-    decoded = buf.toString("utf8");
+    // Normalizar por si viene en base64-url
+    const normalized = rawToken.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    parsed = JSON.parse(json);
   } catch (err) {
-    console.error("❌ validateTokken: error al decodificar base64:", err);
+    console.error("[TOKKEN] Error decodificando tokken:", err);
     return {
       ok: false,
-      reason: "invalid_base64",
+      status: "invalid_format",
+      reason: "Tokken no es base64 JSON válido",
       tokenInfo: null,
     };
   }
 
-  let data;
-  try {
-    data = JSON.parse(decoded);
-  } catch (err) {
-    console.error("❌ validateTokken: error al parsear JSON:", err);
-    return {
-      ok: false,
-      reason: "invalid_json",
-      tokenInfo: null,
-    };
-  }
-
-  const { email, personUid = "", accountUid = "", ts } = data || {};
+  const { email, personUid = "", accountUid = "", ts } = parsed;
 
   if (!email) {
     return {
       ok: false,
-      reason: "missing_email",
-      tokenInfo: data,
+      status: "invalid_payload",
+      reason: "Tokken sin email",
+      tokenInfo: parsed,
     };
   }
 
+  // Validación suave de tiempo (opcional, no bloqueante si falta ts)
+  if (typeof ts === "number") {
+    const maxAgeMs = 120 * 24 * 60 * 60 * 1000; // 120 días
+    const age = Date.now() - ts;
+
+    if (age < -5 * 60 * 1000) {
+      return {
+        ok: false,
+        status: "invalid_timestamp",
+        reason: "Tokken con timestamp en el futuro",
+        tokenInfo: parsed,
+      };
+    }
+
+    if (age > maxAgeMs) {
+      return {
+        ok: false,
+        status: "expired",
+        reason: "Tokken expirado",
+        tokenInfo: parsed,
+      };
+    }
+  }
+
+  // Permitimos personUid/accountUid vacíos por ahora
   return {
     ok: true,
-    reason: "ok",
-    tokenInfo: {
-      email,
-      personUid,
-      accountUid,
-      ts,
-    },
+    status: "ok",
+    reason: null,
+    tokenInfo: { email, personUid, accountUid, ts },
   };
 }
