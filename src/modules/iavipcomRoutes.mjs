@@ -1,32 +1,76 @@
 // src/modules/iavipcomRoutes.mjs
 
-import express from "express";
 import { validateTokken } from "../utils/tokken.mjs";
-import { handleIaVipCom } from "../services/iavipcomService.mjs";
+import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
-const router = express.Router();
+export function registerIaVipComRoutes(app, openai) {
+  app.post("/api/modules/iavipcom", async (req, res) => {
+    try {
+      const body = req.body || {};
 
-router.post("/", async (req, res) => {
-  const rawToken = req.body?.tokken || req.headers["x-tokken"];
+      // ✅ Compatibilidad con frontend (varios nombres posibles)
+      const message =
+        body.message ??
+        body.userMessage ??
+        body.text ??
+        "";
 
-  const validation = validateTokken(rawToken);
+      const rawToken =
+        body.rawToken ??
+        body.tokken ??
+        body.token ??
+        "";
 
-  if (!validation.valid) {
-    return res.status(401).json({
-      ok: false,
-      message: "Tokken Esteborg Members requerido"
-    });
-  }
+      const userName =
+        body.userName ??
+        body.name ??
+        "";
 
-  try {
-    const result = await handleIaVipCom(req.body, validation.data);
-    res.json(result);
-  } catch (err) {
-    console.error("IAvipCom error:", err);
-    res.status(500).json({ ok: false, error: "IAvipCom failed" });
-  }
-});
+      const history =
+        Array.isArray(body.history) ? body.history : [];
 
-export function registerIaVipComRoutes(app) {
-  app.use("/api/modules/iavipcom", router);
+      const lang =
+        body.lang ??
+        body.language ??
+        "es";
+
+      const tokenResult = validateTokken(rawToken);
+
+      // 👇 tokken.mjs regresa { status, isValid }
+      if (tokenResult.status !== "valid" || tokenResult.isValid !== true) {
+        const fallbackReply =
+          "¡Qué gusto saludarte! 😊 Antes de empezar necesito tu Tokken Esteborg Members para validar tu acceso.\n\n" +
+          "Si aún no lo tienes, puedes obtenerlo o recuperarlo aquí:\n" +
+          "https://membersvip.esteborg.live/#miembrosvip\n\n" +
+          "Pégalo aquí y arrancamos. 🔐";
+
+        return res.status(401).json({
+          module: "iavipcom",
+          reply: fallbackReply,
+          tokenStatus: "invalid",
+          tokenInfo: tokenResult,
+        });
+      }
+
+      const reply = await getIaVipComReply(openai, {
+        message,
+        history,
+        userName,
+        lang,
+      });
+
+      return res.json({
+        module: "iavipcom",
+        reply,
+        tokenStatus: "valid",
+        tokenInfo: tokenResult.raw,
+      });
+    } catch (err) {
+      console.error("❌ Error en /api/modules/iavipcom:", err);
+      return res.status(500).json({
+        error: "internal_error",
+        message: "Error interno en IAvipCom",
+      });
+    }
+  });
 }
