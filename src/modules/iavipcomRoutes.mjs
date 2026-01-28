@@ -1,27 +1,48 @@
-import express from "express";
-import { getIaVipComReply } from "../services/iavipcomService.mjs";
+// src/modules/iavipcomRoutes.mjs
+
 import { validateTokken } from "../utils/tokken.mjs";
+import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
-export function registerIaVipComRoutes(app) {
-  const router = express.Router();
-
-  router.post("/", async (req, res) => {
+export function registerIaVipComRoutes(app, openai) {
+  app.post("/api/modules/iavipcom", async (req, res) => {
     try {
-      const { userMessage, language, tokken } = req.body;
+      const { message, rawToken, userName, history } = req.body || {};
 
-      const validation = validateTokken(tokken);
-      if (!validation.valid) {
-        return res.status(401).json({ error: "Tokken inválido" });
+      const tokenResult = validateTokken(rawToken);
+
+      if (tokenResult.status !== "valid") {
+        const fallbackReply =
+          "¡Qué gusto saludarte! 😊 Antes de comenzar necesito tu Token Esteborg Members para validar tu acceso.\n" +
+          "Pégalo aquí abajo ⬇️\n\n" +
+          "Si aún no tienes token, puedes obtenerlo o recuperarlo en: https://membersvip.esteborg.live/#miembrosvip";
+
+        return res.json({
+          module: "iavipcom",
+          reply: fallbackReply,
+          tokenStatus: "invalid",
+          tokenInfo: tokenResult,
+        });
       }
 
-      const reply = await getIaVipComReply(userMessage, language);
-      return res.json({ reply });
+      const reply = await getIaVipComReply(openai, {
+        message,
+        history,
+        userName,
+      });
 
-    } catch (error) {
-      console.error("Error en ruta iavipcom:", error);
-      return res.status(500).json({ error: "Error interno en IAvipCom" });
+      return res.json({
+        module: "iavipcom",
+        reply,
+        tokenStatus: "valid",
+        tokenInfo: tokenResult.raw,
+      });
+    } catch (err) {
+      console.error("❌ Error en /api/modules/iavipcom:", err);
+      return res.status(500).json({
+        error: "internal_error",
+        message:
+          "Ocurrió un error inesperado en el módulo Esteborg IA VIP.",
+      });
     }
   });
-
-  app.use("/api/modules/iavipcom", router);
 }
