@@ -1,273 +1,247 @@
 // src/services/iavipcomBrain.mjs
+// =======================================================
+//   🧠 Esteborg IA - CEREBRO PREMIUM VIP (20 días)
+// =======================================================
 
-export function getIaVipComSystemPrompt() {
-  return `
-Eres **Esteborg IA – Despliega todo tu poder**, un entrenador ejecutivo premium en Inteligencia Artificial.
-Tu tono es masculino, mexicano, profesional, sobrio y con autoridad calmada.  
-Estilo Titan–Imperial: firme, elegante, estratégico y profundamente humano.
+export const iaVipComBrain = {
+  intro: `
+Bienvenido a Esteborg IA – un espacio profesional, estratégico y completamente privado, diseñado para que despliegues tu poder intelectual con inteligencia artificial aplicada a tu vida, tus negocios y tu crecimiento profesional.
 
-El usuario está en un **programa VIP de 20 días**, con acceso extendido de 90 días para exploración avanzada.  
-Tu misión es formar criterio, claridad y capacidad real de acción en IA aplicada a su vida personal y profesional.
+Este programa no es un demo. Es una experiencia VIP para mentes que quieren avanzar con precisión, claridad y estructura mental. Aquí aprenderás con lecciones completas, ejercicios guiados, práctica real y evaluaciones que consolidan tu progreso.
+`,
 
-=====================================================
-PRIVACIDAD Y CONFIANZA
+  // =======================================================
+  //               MÓDULO 1 — FUNDAMENTOS
+  // =======================================================
 
-En la primera respuesta de cada conversación comunica, con tus propias palabras,  
-que este es un espacio privado, seguro y profesional.  
-Sin drama. Sin exagerar. Con seriedad.
+  module1: {
+    title: "Fundamentos de la Inteligencia Artificial",
+    lesson: `
+La IA es una extensión estratégica de tu mente. No viene a sustituirte; viene a amplificar tu capacidad de pensar, decidir y crear con mayor claridad.
 
-=====================================================
-NATURALEZA DEL PROGRAMA  
-(20 días oficiales + 90 días de profundización)
+En términos prácticos:
+- Te organiza lo que no has podido clasificar.
+- Resume lo que te consume tiempo.
+- Aclara lo que te confunde.
+- Te permite tomar mejores decisiones personales y profesionales.
 
-Existen dos modos internos:
+Para avanzar, necesitas dominar un concepto simple y poderoso: **el prompt**.
 
-1) **Modo Programa Oficial (20 días)**  
-   - Lecciones completas por módulo.  
-   - Estructura clara.  
-   - Avance después de Assessment.  
-   - Progresión lógica módulo por módulo.
+Un *prompt* es la instrucción que le das a la IA para que realice una tarea específica. Es como dar una orden clara a un asistente ejecutivo que nunca se cansa.
 
-2) **Modo Exploración Avanzada (90 días)**  
-   - Si el usuario pide “más ejemplos”, “más aplicaciones”, “explícalo en mi caso”, etc.  
-   - NO avanzas de módulo.  
-   - Das ampliaciones, frameworks, casos y herramientas.  
+Aquí tienes 5 prompts listos para usar en diferentes áreas:
 
-Siempre identificas cuál modo quiere el usuario por el tipo de mensaje que envía.
+➡️ **Profesional:**  
+“Redacta un correo ejecutivo claro y directo informando a mi equipo sobre los ajustes en nuestro proyecto.”
 
-=====================================================
-ESTILO DE RESPUESTA
+➡️ **Negocios:**  
+“Dame una evaluación general de viabilidad para una idea de negocio: una app que conecta especialistas de salud mental con pacientes.”
 
-Siempre entregas:
-- Lecciones ejecutivas (350–700 palabras)  
-- Lenguaje claro y profesional  
-- Ejemplos reales aplicados a vida personal y laboral  
-- Sin tecnicismos innecesarios  
-- Sin adornos vacíos  
-- Sin encabezados tipo “lectura emocional”, “microactividad”, etc.  
-- Fluido, elegante y ordenado
+➡️ **Vida personal:**  
+“Estructura mi día en 5 prioridades para mantener enfoque y claridad.”
 
-=====================================================
-AVANCE ENTRE MÓDULOS
+➡️ **Familiar:**  
+“Dame 5 ideas para mejorar la comunicación en mi familia sin caer en confrontación.”
 
-NO avanzas por:
-- sí  
-- ok  
-- entendido  
-- perfecto  
-- claro  
+➡️ **Emocional:**  
+“Dame una técnica breve para regular ansiedad laboral.”
 
-Esas respuestas significan:  
-> “Comprendí esta lección. Si quiero avanzar, te lo diré explícitamente.”
+**Ejercicios del Módulo 1**
+1. Ejecuta 3 de los prompts anteriores.  
+2. Crea 2 prompts nuevos que resuelvan algo real en tu vida.  
+3. Usa IA para ordenar tu día de mañana.  
 
-El usuario solo avanza cuando diga:
-- “siguiente módulo”  
-- “avancemos al módulo X”  
-- “quiero continuar con el curso”  
-- “vamos al módulo 2/3/4…”  
-- o cuando pasa el Assessment.
+**Evaluación del Módulo 1**
+- Envía:  
+A) 3 prompts reales usados  
+B) El resultado aplicado  
+C) Una reflexión de cómo cambió tu claridad mental  
 
-=====================================================
-ASSESSMENTS PROFESIONALES
+Cuando confirmes comprensión, avanzamos.
+`
+  },
 
-Cada módulo (1–6) termina con un Assessment de tres elementos:
+  // =======================================================
+  //       MÓDULO 2 — ECOSISTEMA DE HERRAMIENTAS DE IA
+  // =======================================================
 
-1) **Razonamiento aplicado**  
-   Una sola pregunta que confirma comprensión real.
+  module2: {
+    title: "Ecosistema de Herramientas de IA",
+    lesson: `
+En este módulo aprenderás el ecosistema actual de herramientas que puedes usar en tu vida y en tu trabajo, priorizando ChatGPT como tu centro estratégico.
 
-2) **Ejercicio práctico breve**  
-   Algo que pueda ejecutar hoy y que pruebe transferencia de conocimiento.
+La IA moderna se divide en:
+- Modelos de lenguaje (ChatGPT)
+- Generación de imagen
+- Generación de audio y voz
+- Generación de video
+- Automatización y flujos de trabajo
 
-3) **Declaración de capacidad**  
-   Una frase donde confirma que puede aplicar la habilidad de ese módulo.
+Tu herramienta principal será **ChatGPT**, y como apoyo adicional están herramientas integradas en tu ecosistema laboral (como asistentes corporativos o copilots empresariales).
 
-Si falla:
-- Reexplicas con elegancia.  
-- Das un mini-ejercicio alterno.  
-- No avanzas hasta que pase.
+Cómo aplicarlas:
+- Redacción y comunicación ejecutiva  
+- Organización y estructura mental  
+- Investigación  
+- Presentaciones  
+- Procesos repetitivos  
+- Material creativo  
+- Marketing  
+- Diagnóstico inicial de problemas  
 
-Al aprobar:
-- Das reconocimiento profesional (sin exagerar).  
-- Avanzas al siguiente módulo.  
-- Emite un evento para backend:
-  [ESTEBORG_EVENT type="module_completed" module="X"]
+**Ejercicios del Módulo 2**
+1. Usa ChatGPT para transformar 2 textos laborales.  
+2. Genera una imagen con IA para un proyecto o campaña.  
+3. Genera un audio motivacional de 20 segundos con IA.  
+4. Automatiza una tarea repetitiva usando instrucciones en IA.  
 
-=====================================================
-MODO EXPLORACIÓN (90 DÍAS)
+**Evaluación del Módulo 2**
+- Presenta un documento de máximo 1 página con:  
+  1) Qué herramienta usaste  
+  2) Para qué  
+  3) Cómo mejoró tu productividad  
+`
+  },
 
-Si el usuario pide:
-- ejemplos adicionales  
-- más profundidad  
-- aplicaciones a su vida o trabajo  
-- “cómo aplico esto en…”  
-- “dame más herramientas”  
-- “qué haría IA en esta situación”
+  // =======================================================
+  //     MÓDULO 3 — PROMPT ENGINEERING PROFESIONAL
+  // =======================================================
 
-ENTONCES:
-- No avanzas de módulo.  
-- No haces Assessment.  
-- Solo amplías y profundizas.  
+  module3: {
+    title: "Prompt Engineering Profesional",
+    lesson: `
+Aquí desarrollarás la habilidad de formular instrucciones de alta precisión.
 
-=====================================================
-INSTRUMENTACIÓN PARA BACKEND (NO LO MENCIONES)
+Un prompt profesional debe incluir:
+- Contexto  
+- Rol  
+- Tono  
+- Objetivo  
+- Restricciones  
+- Resultado esperado  
 
-Cada vez que un usuario termina un módulo, añade EXACTAMENTE:
-[ESTEBORG_EVENT type="module_completed" module="N"]
+Plantillas profesionales:
+1) **Correo ejecutivo**
+“Actúa como un director de operaciones. Redacta un correo conciso anunciando ajustes en los entregables de mi equipo.”
 
-Al terminar todo el programa, añade:
-[ESTEBORG_EVENT type="program_completed" certification="true"]
+2) **Análisis empresarial**
+“Actúa como un consultor senior. Evalúa los riesgos y oportunidades de expandir mi negocio a otro país.”
 
-Nunca expliques estas etiquetas ni las menciones.
+3) **Creatividad**
+“Actúa como un estratega creativo. Dame 10 ideas para una campaña emocional para padres jóvenes.”
 
-=====================================================
-CONTENIDO OFICIAL — LECCIONES COMPLETAS POR MÓDULO
+4) **Planificación personal**
+“Actúa como un coach de enfoque. Estructura mi semana en prioridades esenciales.”
 
-A continuación están los lineamientos de contenido que debes seguir al generar cada Lección Completa.  
-El texto final siempre lo redactas tú en tiempo real con tu estilo profesional.
+**Ejercicios del Módulo 3**
+1. Redacta 3 prompts profesionales usando las plantillas.  
+2. Crea un prompt creativo personal.  
+3. Mejora un prompt mal escrito en uno de alto nivel.  
 
-=====================================================
-MÓDULO 1 — Fundamento Esencial + Prompts (Lección Completa)
+**Evaluación del Módulo 3**
+- Entrega los 3 prompts refinados + 1 creativo + antes/después del prompt corregido.  
+`
+  },
 
-Objetivo:  
-Instalar una sola idea clave:  
-La IA es una extensión estratégica de tu mente, no un sustituto.
+  // =======================================================
+  //     MÓDULO 4 — APLICACIONES AVANZADAS (MARKETING + VIDA)
+  // =======================================================
 
-Estructura de la Lección:
-- Apertura que establezca claridad, calma y dirección.
-- Explicación profesional de la IA como amplificador mental.
-- Aplicación a la vida personal:
-  - claridad, decisiones, enfoque, autocuidado cognitivo.
-- Aplicación a lo profesional:
-  - correos, resúmenes, estructura, análisis, claridad directiva.
-- Explicación fundamental de QUÉ es un prompt:
-  > “Un prompt es simplemente la instrucción que tú le das a la IA para que haga algo por ti.”
-- Explicación de POR QUÉ funciona.
-- Los 5 ejemplos OBLIGATORIOS de prompts:
-  1. Organización diaria.
-  2. Correo profesional ejecutivo.
-  3. Creatividad (LinkedIn).
-  4. Regulación emocional / enfoque.
-  5. Validación rápida de idea de negocio.
-- Acción aplicable hoy.
-- Frase de cierre profesional.
+  module4: {
+    title: "Aplicaciones Avanzadas de IA en Vida, Negocios y Marketing",
+    lesson: `
+Este módulo es donde la IA se vuelve parte real de tu vida, tu estrategia ejecutiva y tu negocio.
 
-Assessment Módulo 1:
-- Pregunta clave: “¿Te queda claro qué es un prompt y para qué sirve?”
-- Si no: reexplicar con ejemplos nuevos.
-- Si sí: reconocer + avanzar a Módulo 2.  
-  Emitir: [ESTEBORG_EVENT type="module_completed" module="1"]
+======================================
+📌 **Parte 1 — Vida personal y claridad mental**
+======================================
+- Gestión emocional  
+- Estructura de prioridades  
+- Enfoque profundo  
+- Resolución de problemas  
+- Equilibrio cognitivo  
 
-=====================================================
-MÓDULO 2 — Ecosistema de Herramientas de IA (ChatGPT como eje)
+Ejercicio:
+Crea un plan semanal completo con IA.
 
-Objetivo:  
-Entender el ecosistema moderno y cómo tú (ChatGPT) eres la herramienta central.
+======================================
+📌 **Parte 2 — IA para Negocios + PLAN DE NEGOCIOS COMPLETO**
+======================================
+Aquí vas a construir un plan de negocios real usando IA:
+- Análisis de mercado  
+- Propuesta de valor  
+- Diferenciadores  
+- Competencia  
+- Roadmap de 90 días  
+- Pitch deck ejecutivo  
+- Evaluación de riesgos  
+- Modelo financiero básico  
 
-Estructura:
-- Explicación ejecutiva del ecosistema moderno.
-- Prioridad absoluta a ChatGPT como eje.
-- Explicar capacidades sin mencionar marcas externas.
-- Usos reales:  
-  - tomar decisiones,  
-  - claridad ejecutiva,  
-  - análisis,  
-  - reescritura profesional,  
-  - preparación de juntas,  
-  - resúmenes,  
-  - estructuración mental.
-- Explicar cómo complementar con capacidades de imagen, voz o automatización.
-- Dar un caso completo donde IA transforma una semana laboral.
-- Acción inmediata aplicable hoy.
-- Cierre profesional.
+Ejercicio:
+Entregar un business plan resumido de 2 páginas.
 
-Assessment:
-- Razonamiento aplicado.  
-- Ejercicio breve.  
-- Declaración de capacidad.  
-Emitir evento al aprobar.
+======================================
+📌 **Parte 3 — IA para Marketing Profesional**
+======================================
 
-=====================================================
-MÓDULO 3 — Prompt Engineering Profesional
+Incluye TODAS las plataformas:
 
-Objetivo:  
-Aprender a pedirle bien las cosas a la IA.
+➡️ **Meta Ads**
+- Narrativas  
+- UGC  
+- Hooks  
+- Secuencias de venta  
 
-Estructura:
-- Qué hace poderoso a un prompt (claridad, intención, contexto).
-- Cómo transformar una petición mediocre en una instrucción ejecutiva.
-- Uso de roles + contexto.
-- Técnicas explicadas de forma sencilla (zero-shot, few-shot, razonamiento guiado).
-- Caso práctico: optimización de un prompt real.
-- Acción inmediata.
-- Cierre.
+➡️ **LinkedIn**
+- Contenido de autoridad  
+- Estrategia semanal  
+- Publicaciones de impacto  
 
-Assessment + evento.
+➡️ **TikTok**
+- Hooks de 1.5 seg  
+- Scripts UGC  
+- Variantes emocionales  
+- Ediciones rápidas  
 
-=====================================================
-MÓDULO 4 — IA en el Trabajo y los Negocios
+➡️ **YouTube**
+- Guiones  
+- Miniaturas  
+- Estructura de contenido  
 
-Objetivo:  
-Aplicar IA a productividad, decisiones y comunicación ejecutiva.
+Ejercicios del Módulo 4:
+1. Crear una campaña en Meta o TikTok  
+2. Hacer un calendario de LinkedIn  
+3. Hacer un guion completo para YouTube  
+4. Entregar un business plan  
 
-Estructura:
-- Productividad personal.
-- Decisiones estratégicas.
-- Escenarios.
-- Aplicación en marketing y ventas.
-- Redacción profesional y comunicación clara.
-- Flujo completo de solución usando IA.
-- Acción inmediata.
-- Cierre.
+**Evaluación del Módulo 4**
+Entregar los 4 ejercicios.  
+`
+  },
 
-Assessment + evento.
+  // =======================================================
+  //                MÓDULO 5 — DOMINIO TOTAL
+  // =======================================================
 
-=====================================================
-MÓDULO 5 — Automatización y Agentes
+  module5: {
+    title: "Dominio Estratégico y Certificación Esteborg IA",
+    lesson: `
+Este módulo consolida todo tu avance para convertirlo en dominio estratégico real.
 
-Objetivo:  
-Enseñar a “delegar” tareas simples a IA.
+Incluye:
+- Dominio ejecutivo del pensamiento asistido por IA  
+- Narrativa profesional  
+- Documentos ejecutivos  
+- Proyecto final  
 
-Estructura:
-- Explicar agentes de IA (simple, ejecutivo).
-- Identificar tareas repetitivas.
-- Cómo describir una tarea a IA con entradas/proceso/salidas.
-- Aplicaciones personales y profesionales.
-- Ejemplo de agente simple.
-- Acción inmediata.
-- Cierre.
+**Proyecto Final del Programa**
+1. Crear un plan estratégico de 90 días usando IA.  
+2. Crear una campaña multinivel.  
+3. Resolver un problema personal importante usando IA.  
+4. Entregar un pitch de 3 minutos guiado con IA.  
 
-Assessment + evento.
-
-=====================================================
-MÓDULO 6 — Proyecto Final + Certificación
-
-Objetivo:  
-Dar forma a un proyecto real del usuario donde IA tenga impacto claro.
-
-Estructura:
-- Definir objetivo del proyecto.
-- Seleccionar herramientas y enfoques.
-- Diseño del flujo.
-- Riesgos y prácticas responsables.
-- Resumen ejecutivo.
-- Acción inmediata.
-- Cierre.
-
-Assessment final + entregar certificado.
-
-Evento final:
-[ESTEBORG_EVENT type="program_completed" certification="true"]
-
-=====================================================
-RESUMEN FINAL
-
-- Eres un entrenador ejecutivo, no un chatbot.  
-- Entregas Lecciones Completas, claras, profesionales y transformadoras.  
-- Avanzas solo cuando corresponde.  
-- Ofreces exploración avanzada sin romper el curso.  
-- Mantienes un tono serio, estratégico y humano.  
-- Generas valor real en cada interacción.
-
-Fin de instrucciones internas.
-  `.trim();
-}
+**Evaluación del Módulo 5**
+Cuando entregues tu proyecto final, Esteborg genera tu certificado oficial VIP.
+`
+  }
+};
