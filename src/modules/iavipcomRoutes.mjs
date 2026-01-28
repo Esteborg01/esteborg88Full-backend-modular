@@ -1,82 +1,88 @@
 // src/modules/iavipcomRoutes.mjs
 
+import { Router } from "express";
 import { validateTokken } from "../utils/tokken.mjs";
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
+const router = Router();
+
 /**
- * Registro de rutas para Esteborg IA – Despliega todo tu poder.
- * Importante: la ruta debe ser /modules/iavipcom
- * porque eso es lo que llama el frontend desde el iframe.
+ * Registro de rutas para Esteborg IA – Despliega todo tu poder
+ * Path esperado por el frontend:
+ *   POST /api/modules/iavipcom
  */
 export function registerIaVipComRoutes(app, openai) {
-  // 👇 OJO: SIN /api, igual que comunica, ventas, erpev, etc.
-  app.post("/modules/iavipcom", async (req, res) => {
+  router.post("/", async (req, res) => {
     try {
-      const {
-        message,
-        rawToken,
-        token: bodyToken,
-        history,
-        userName,
-        lang,
-      } = req.body || {};
+      // 1) Leer Tokken desde header o body (compatibilidad con todos tus frontends)
+      const rawToken =
+        req.headers["x-esteborg-tokken"] ||
+        req.body?.tokken ||
+        req.body?.token ||
+        null;
 
-      // 1) Validar que venga mensaje
-      if (!message || typeof message !== "string") {
-        return res.status(400).json({
-          error: "missing_message",
-          message:
-            "Falta el mensaje principal para trabajar en tu entrenamiento de IA.",
+      const {
+        isValid,
+        statusCode,
+        clientMessage,
+        info: tokenInfo,
+      } = validateTokken(rawToken);
+
+      // 2) Si el Tokken NO es válido → respondemos 4xx pero con mensaje claro
+      if (!isValid) {
+        return res.status(statusCode).json({
+          module: "iavipcom",
+          reply: clientMessage,
+          tokenStatus: "invalid",
+          tokenInfo,
         });
       }
 
-      // 2) Resolver el token que venga (si viene)
-      const incomingToken =
-        typeof rawToken === "string" && rawToken.trim()
-          ? rawToken.trim()
-          : typeof bodyToken === "string" && bodyToken.trim()
-          ? bodyToken.trim()
-          : null;
+      // 3) Extraer payload de IA
+      const {
+        message,
+        history = [],
+        userName = "",
+        lang = "es",
+      } = req.body || {};
 
-      let tokenStatus = "missing";
-      let tokenInfo = null;
-
-      if (incomingToken) {
-        try {
-          const validation = validateTokken(incomingToken);
-          tokenStatus = validation.status || "valid";
-          tokenInfo = validation.tokenInfo || null;
-        } catch (err) {
-          console.error("❌ Error al validar Tokken en iavipcom:", err);
-          tokenStatus = "invalid";
-        }
+      if (!message) {
+        return res.status(400).json({
+          module: "iavipcom",
+          error: "missing_message",
+          message:
+            "Falta el mensaje del usuario en el cuerpo de la petición (campo 'message').",
+        });
       }
 
-      // 3) Llamar al "cerebro" de Esteborg IA – Despliega todo tu poder
-      const reply = await getIaVipComReply({
-        openai,
+      // 4) Llamar al brain específico del programa IA
+      const reply = await getIaVipComReply(openai, {
         message,
-        history: Array.isArray(history) ? history : [],
-        userName: userName || "",
-        lang: lang || "es",
-        tokenStatus,
-        tokenInfo,
+        history,
+        userName,
+        lang,
       });
 
-      // 4) Respuesta unificada al frontend
+      // 5) Respuesta estándar para el frontend Esteborg
       return res.json({
         module: "iavipcom",
         reply,
-        tokenStatus,
+        tokenStatus: "valid",
         tokenInfo,
       });
     } catch (err) {
-      console.error("❌ Error en /modules/iavipcom:", err);
+      console.error("❌ Error en /api/modules/iavipcom:", err);
+
       return res.status(500).json({
+        module: "iavipcom",
         error: "internal_error",
         message:
-          "Ocurrió un error inesperado en el módulo Esteborg IA - Despliega todo tu poder.",
+          "Tuvimos un problema al conectar con Esteborg IA. Verifica tu conexión o inténtalo en unos momentos.",
       });
     }
   });
+
+  // Montamos el router EXACTAMENTE donde el frontend lo espera:
+  // POST https://.../api/modules/iavipcom
+  app.use("/api/modules/iavipcom", router);
 }
