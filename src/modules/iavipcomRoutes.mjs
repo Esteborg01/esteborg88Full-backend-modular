@@ -3,8 +3,13 @@
 import { validateTokken } from "../utils/tokken.mjs";
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
+/**
+ * Registro de rutas para Esteborg IA – Despliega todo tu poder.
+ * Importante: la ruta debe ser /modules/iavipcom
+ * porque eso es lo que llama el frontend desde el iframe.
+ */
 export function registerIaVipComRoutes(app, openai) {
-  // IMPORTANTE: el frontend llama a /modules/iavipcom (sin /api)
+  // 👇 OJO: SIN /api, igual que comunica, ventas, erpev, etc.
   app.post("/modules/iavipcom", async (req, res) => {
     try {
       const {
@@ -16,40 +21,61 @@ export function registerIaVipComRoutes(app, openai) {
         lang,
       } = req.body || {};
 
-      const usedToken = rawToken || bodyToken || "";
-
-      const tokenResult = validateTokken(usedToken);
-
-      if (!tokenResult.ok) {
-        // Mismo patrón que los otros módulos cuando el Tokken falla
-        return res.status(200).json({
-          module: "iavipcom",
-          reply:
-            "Tuvimos un problema al validar tu Tokken Esteborg Members. Verifica tu acceso o intenta de nuevo en unos momentos.",
-          tokenStatus: "invalid",
-          tokenInfo: tokenResult.tokenInfo,
+      // 1) Validar que venga mensaje
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({
+          error: "missing_message",
+          message:
+            "Falta el mensaje principal para trabajar en tu entrenamiento de IA.",
         });
       }
 
-      const reply = await getIaVipComReply(openai, {
+      // 2) Resolver el token que venga (si viene)
+      const incomingToken =
+        typeof rawToken === "string" && rawToken.trim()
+          ? rawToken.trim()
+          : typeof bodyToken === "string" && bodyToken.trim()
+          ? bodyToken.trim()
+          : null;
+
+      let tokenStatus = "missing";
+      let tokenInfo = null;
+
+      if (incomingToken) {
+        try {
+          const validation = validateTokken(incomingToken);
+          tokenStatus = validation.status || "valid";
+          tokenInfo = validation.tokenInfo || null;
+        } catch (err) {
+          console.error("❌ Error al validar Tokken en iavipcom:", err);
+          tokenStatus = "invalid";
+        }
+      }
+
+      // 3) Llamar al "cerebro" de Esteborg IA – Despliega todo tu poder
+      const reply = await getIaVipComReply({
+        openai,
         message,
-        history,
-        userName,
-        lang,
+        history: Array.isArray(history) ? history : [],
+        userName: userName || "",
+        lang: lang || "es",
+        tokenStatus,
+        tokenInfo,
       });
 
-      return res.status(200).json({
+      // 4) Respuesta unificada al frontend
+      return res.json({
         module: "iavipcom",
         reply,
-        tokenStatus: "valid",
-        tokenInfo: tokenResult.tokenInfo,
+        tokenStatus,
+        tokenInfo,
       });
     } catch (err) {
       console.error("❌ Error en /modules/iavipcom:", err);
       return res.status(500).json({
         error: "internal_error",
         message:
-          "Ocurrió un error inesperado en el módulo Esteborg IA – Despliega todo tu poder.",
+          "Ocurrió un error inesperado en el módulo Esteborg IA - Despliega todo tu poder.",
       });
     }
   });
