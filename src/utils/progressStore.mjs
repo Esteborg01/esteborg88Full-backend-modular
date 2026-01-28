@@ -1,66 +1,34 @@
 // src/utils/progressStore.mjs
 
-// Almacenamiento en memoria por ahora (por email).
-// Futuro: esto se puede mover a una DB sin cambiar el resto del código.
+import fs from "fs";
+import path from "path";
 
-const progressByEmail = new Map();
+const DB_PATH = path.resolve("progress-db.json");
 
-/**
- * Actualiza el progreso de un usuario a partir de un evento de Esteborg.
- * @param {string|null} email
- * @param {{ type: string, module?: string, certification?: string }} event
- * @returns {object} estado actual del usuario
- */
-export function updateUserProgress(email, event) {
-  if (!email) {
-    // Si no hay email, registramos solo en logs y salimos
-    console.log("⚠️ Progreso sin email, solo log:", event);
-    return null;
+// Cargar DB simple JSON
+function loadDB() {
+  if (!fs.existsSync(DB_PATH)) {
+    fs.writeFileSync(DB_PATH, JSON.stringify({}), "utf8");
   }
-
-  const now = new Date().toISOString();
-
-  let state = progressByEmail.get(email);
-  if (!state) {
-    state = {
-      email,
-      modulesCompleted: [],
-      currentModule: null,
-      programCompleted: false,
-      certificateIssued: false,
-      lastEventAt: now,
-    };
-  }
-
-  if (event.type === "module_completed" && event.module) {
-    const moduleNumber = String(event.module);
-    if (!state.modulesCompleted.includes(moduleNumber)) {
-      state.modulesCompleted.push(moduleNumber);
-      state.currentModule = moduleNumber;
-      state.lastEventAt = now;
-      console.log("🎓 Módulo completado:", { email, module: moduleNumber });
-    }
-  }
-
-  if (event.type === "program_completed") {
-    state.programCompleted = true;
-    state.certificateIssued = event.certification === "true";
-    state.lastEventAt = now;
-    console.log("🏅 Programa completado:", {
-      email,
-      certificateIssued: state.certificateIssued,
-    });
-  }
-
-  progressByEmail.set(email, state);
-  return state;
+  const text = fs.readFileSync(DB_PATH, "utf8");
+  return JSON.parse(text || "{}");
 }
 
-/**
- * Obtiene el progreso actual de un usuario por email.
- * @param {string} email
- */
-export function getUserProgress(email) {
-  if (!email) return null;
-  return progressByEmail.get(email) || null;
+// Guardar DB simple JSON
+function saveDB(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), "utf8");
+}
+
+export async function getUserProgress(email) {
+  const db = loadDB();
+  return db[email] || {};
+}
+
+export async function saveUserProgress(email, newProgress) {
+  const db = loadDB();
+  db[email] = {
+    ...(db[email] || {}),
+    ...newProgress,
+  };
+  saveDB(db);
 }
