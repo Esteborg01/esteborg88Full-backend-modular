@@ -1,43 +1,46 @@
 import express from "express";
 import { requireVipTokken } from "../middleware/requireVipTokken.mjs";
+import { generateIaVipComResponse } from "../services/iavipcomBrain.mjs";
 
-export function registerIaVipComRoutes(app, openai) {
+export function registerIaVipComRoutes(app) {
   const router = express.Router();
 
-  // 🔐 Middleware de Tokken SOLO aquí
+  // 🔐 IAvip SIEMPRE requiere Members VIP
   router.use(requireVipTokken);
 
   router.post("/", async (req, res) => {
     try {
-      const { messages, language = "es" } = req.body;
-
-      const isMember = req.esteborgMember === true;
-
-      // 🔒 Control demo vs VIP
-      if (!isMember) {
-        return res.json({
-          demo: true,
+      if (!req.esteborgMember) {
+        return res.status(403).json({
+          error: "vip_required",
           message:
-            "Estás en modo demo de Esteborg IA. Activa tu Tokken Members VIP para acceso completo.",
+            "Esteborg IA es un programa premium. Requiere Tokken Esteborg Members activo.",
         });
       }
 
-      // 🤖 Llamada OpenAI
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages,
-        temperature: 0.6,
+      const { message, lang = "es" } = req.body;
+
+      if (!message || message.trim().length < 2) {
+        return res.json({
+          reply: "Dime qué quieres lograr y comenzamos.",
+        });
+      }
+
+      const reply = await generateIaVipComResponse({
+        userMessage: message,
+        lang,
+        tokenData: req.esteborgTokken || {},
       });
 
       return res.json({
         vip: true,
-        response: completion.choices[0].message.content,
+        reply,
       });
     } catch (err) {
-      console.error("❌ Error IA VIP:", err);
+      console.error("❌ Error IA VIP TITAN:", err);
       return res.status(500).json({
-        error: "ia_error",
-        message: "Error interno en Esteborg IA",
+        error: "iavip_error",
+        message: "Error interno en Esteborg IA VIP.",
       });
     }
   });
