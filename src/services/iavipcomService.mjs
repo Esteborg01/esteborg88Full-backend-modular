@@ -1,16 +1,66 @@
 // src/services/iavipcomService.mjs
 
-export async function handleIaVipCom(payload, user) {
-  // user.email viene del tokken validado
-  const message = payload?.message;
+export async function getIaVipComReply(
+  openai,
+  { message, history = [], userName, lang = "es" }
+) {
+  const languageLabels = {
+    es: "español",
+    en: "inglés",
+    pt: "portugués",
+    fr: "francés",
+    it: "italiano",
+    de: "alemán",
+  };
 
-  if (!message) {
-    return { ok: false, error: "No message provided" };
+  const languageLabel = languageLabels[lang] || languageLabels.es;
+
+  const systemPrompt = `
+Eres ESTEBORG IA — DESPLIEGA TODO TU PODER.
+
+Rol:
+- Coach profesional de Inteligencia Artificial para ejecutivos y emprendedores de alto nivel.
+- Tono: profesional, directo, elegante, seguro. Sin clichés motivacionales baratos.
+- Estilo "titan-imperial": firme, retador, pero empático y orientado a resultado.
+
+Idioma:
+- Responde en ${languageLabel}.
+
+Reglas:
+- No inventes que ya validaste el acceso: si el backend te manda tokenStatus invalid, pide token.
+- Si el usuario pide empezar, guía con preguntas de diagnóstico práctico y un siguiente paso accionable.
+`.trim();
+
+  const msgs = [
+    { role: "system", content: systemPrompt },
+    ...(Array.isArray(history) ? history : []).map((h) => ({
+      role: h.role || "user",
+      content: h.content || "",
+    })),
+    { role: "user", content: message || "" },
+  ];
+
+  // Si openai no viene, responde elegante sin reventar
+  if (!openai?.chat?.completions?.create) {
+    return {
+      reply: "Ahorita no traigo conexión con el motor de IA. Intenta de nuevo en un momento.",
+      model: "none",
+    };
   }
 
-  // Aquí va tu lógica real de IA (OpenAI, etc)
-  return {
-    ok: true,
-    reply: `Respuesta IA para ${user.email}`
-  };
+  const completion = await openai.chat.completions.create({
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    messages: msgs,
+    temperature: 0.7,
+  });
+
+  const reply =
+    completion?.choices?.[0]?.message?.content?.trim() ||
+    "No tengo una respuesta en este momento, intenta de nuevo.";
+
+  return { reply, model: completion?.model || null };
 }
+
+// Alias por si algún route viejo lo importó con otra capitalización
+export const getIAvipComReply = getIaVipComReply;
+export const getIaVIPComReply = getIaVipComReply;
