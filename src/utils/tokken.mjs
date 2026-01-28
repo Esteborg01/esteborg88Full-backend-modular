@@ -1,24 +1,72 @@
 // src/utils/tokken.mjs
 
-import jwt from "jsonwebtoken";
+// Genera el Tokken Esteborg Members
+export function generateTokkenForUser({
+  email,
+  personUid = "",
+  accountUid = "",
+}) {
+  if (!email) {
+    throw new Error("generateTokkenForUser: email es requerido");
+  }
 
-// 🔐 Llave secreta — la misma que usas en tus otros módulos
-const SECRET = process.env.ESTEBORG_TOKKEN_SECRET || "ESTEBORG_PREMIUM_2026";
+  const payload = {
+    email,
+    personUid,
+    accountUid,
+    ts: Date.now(),
+  };
 
-// Verifica y decodifica Tokken Esteborg Members VIP
-export function verifyTokken(tokken) {
+  const json = JSON.stringify(payload);
+  const token = Buffer.from(json, "utf8").toString("base64url");
+
+  return token;
+}
+
+// Valida el Tokken que llega desde el frontend / GPTs
+export function validateTokken(rawToken) {
+  if (!rawToken || typeof rawToken !== "string") {
+    return {
+      status: "missing",
+      isValid: false,
+      reason: "missing_token",
+    };
+  }
+
   try {
-    if (!tokken) return { valid: false, reason: "missing" };
+    const decoded = Buffer.from(rawToken, "base64url").toString("utf8");
+    const data = JSON.parse(decoded);
 
-    const decoded = jwt.verify(tokken, SECRET);
+    const { email, personUid = "", accountUid = "", ts } = data || {};
+
+    if (!email) {
+      return {
+        status: "invalid",
+        isValid: false,
+        reason: "missing_email",
+        raw: data,
+      };
+    }
 
     return {
-      valid: true,
-      userId: decoded.userId || null,
-      plan: decoded.plan || "vip",
-      exp: decoded.exp,
+      status: "valid",
+      isValid: true,
+      email,
+      personUid,
+      accountUid,
+      ts,
+      raw: data,
     };
   } catch (err) {
-    return { valid: false, reason: "invalid" };
+    console.error("validateTokken error:", err);
+
+    return {
+      status: "invalid",
+      isValid: false,
+      reason: "parse_error",
+    };
   }
 }
+
+// 🔥 Alias retrocompatible para no romper rutas viejas
+export const verifyTokken = validateTokken;
