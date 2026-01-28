@@ -1,6 +1,6 @@
 // src/modules/iavipcomRoutes.mjs
 import express from "express";
-import { openai } from "../utils/openaiClient.mjs";
+import { openai } from "../config/openaiClient.mjs";
 import { validateTokken } from "../utils/tokken.mjs";
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
