@@ -1,57 +1,47 @@
 // src/modules/iavipcomRoutes.mjs
 import express from "express";
-import { openai } from "../config/openaiClient.mjs";
-import { validateTokken } from "../utils/tokken.mjs";
-import { getIaVipComReply } from "../services/iavipcomService.mjs";
+import { iavipcomService } from "../services/iavipcomService.mjs";
+import { verifyTokken } from "../utils/tokken.mjs";
 
-export const iavipcomRouter = express.Router();
+const router = express.Router();
 
 // POST /api/modules/iavipcom
-iavipcomRouter.post("/", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
-    const {
-      message = "",
-      history = [],
-      userName = "",
-      lang = "es",
-      token = "",
-    } = req.body;
+    const { message, userName, lang = "es", tokken } = req.body;
 
-    // Validación de tokken idéntica a la de Com7
-    const { tokenStatus, tokenInfo } = validateTokken(token);
-
-    if (tokenStatus === "invalid") {
-      return res.status(401).json({
+    // 1. Validación de token
+    const tokenInfo = verifyTokken(tokken);
+    if (!tokenInfo.valid) {
+      return res.status(200).json({
         module: "iavipcom",
         reply:
-          "Tu Tokken Esteborg Members no es válido o expiró. Por favor, obtén uno nuevo en https://membersvip.esteborg.live/#miembrosvip",
-        tokenStatus,
+          "❌ Tu Tokken Esteborg Members no es válido. Verifica tu membresía en https://membersvip.esteborg.live/#miembrosvip",
+        tokenStatus: "invalid",
       });
     }
 
-    // Construcción correcta del payload que pide el service
-    const reply = await getIaVipComReply(openai, {
+    // 2. Ejecutar servicio
+    const reply = await iavipcomService({
       message,
-      history,
       userName,
       lang,
-      token,
-      tokenStatus,
-      tokenInfo,
+      history: req.body.history || [],
     });
 
     return res.status(200).json({
       module: "iavipcom",
       reply,
-      tokenStatus,
+      tokenStatus: "valid",
       tokenInfo,
     });
-  } catch (error) {
-    console.error("[IAVIPCOM ERROR]", error);
+  } catch (err) {
+    console.error("[IAvipCom ERROR]", err);
     return res.status(500).json({
       module: "iavipcom",
-      reply:
-        "Hubo un error al procesar tu solicitud. Intenta nuevamente en unos momentos.",
+      reply: "⚠️ Estamos experimentando un problema. Intenta en unos momentos.",
     });
   }
 });
+
+export { router as iavipcomRoutes };
