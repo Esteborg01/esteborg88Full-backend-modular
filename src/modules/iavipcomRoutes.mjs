@@ -2,7 +2,7 @@
 
 import { Router } from "express";
 import { processIaVipComMessage } from "../services/iavipcomService.mjs";
-import { validateTokken } from "../utils/tokkenValidator.mjs";
+import { validateTokken } from "../utils/tokken.mjs";
 
 const router = Router();
 
