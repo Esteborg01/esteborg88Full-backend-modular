@@ -1,65 +1,77 @@
-// server.mjs
+// ===============================================
+//  SERVIDOR ESTEBORG MODULAR – TITAN IMPERIAL
+// ===============================================
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import { compressHistoryMiddleware } from "./src/middleware/compressHistory.mjs";
-import { rateLimiter } from "./src/middleware/rateLimiter.mjs";
-import { longMessageGuard } from "./src/middleware/longMessageGuard.mjs";
-import { modelSelector } from "./src/middleware/modelSelector.mjs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-// Cliente OpenAI
-import { openai } from "./src/config/openaiClient.mjs";
-
-// Rutas por módulo
-import { registerEsteborgFullRoutes } from "./src/modules/esteborgFullRoutes.mjs";
-import { registerComunicaRoutes } from "./src/modules/comunicaRoutes.mjs";
-import { registerVentasRoutes } from "./src/modules/ventasRoutes.mjs";
-import { registerErpevRoutes } from "./src/modules/erpevRoutes.mjs";
-import { registerDemoRoutes } from "./src/modules/demoWelcomeRoutes.mjs";
-import { registerVoiceRoutes } from "./src/modules/voiceRoutes.mjs";
+// ====== IMPORTS DE TODOS LOS MÓDULOS ======
 import { registerTokkenRoutes } from "./src/modules/tokkenRoutes.mjs";
 import { registerIaVipComRoutes } from "./src/modules/iavipcomRoutes.mjs";
+import { registerComunicaRoutes } from "./src/modules/comunicaRoutes.mjs";   // si lo tienes
+import { registerErpevRoutes } from "./src/modules/erpevRoutes.mjs";         // si lo tienes
+import { registerVentasRoutes } from "./src/modules/ventasRoutes.mjs";       // si lo tienes
+import { registerDemoRoutes } from "./src/modules/demoWelcomeRoutes.mjs";    // si lo tienes
 
-dotenv.config();
+// ===============================================
+//   CONFIGURACIÓN BÁSICA EXPRESS
+// ===============================================
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(rateLimiter);
-app.use(longMessageGuard);
-app.use(compressHistoryMiddleware);
-app.use(modelSelector);
 
+app.use(cors());
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+// ===============================================
+//  LOG BÁSICO PARA DEBUG (PRODUCCIÓN SAFE)
+// ===============================================
+app.use((req, res, next) => {
+  console.log(`➡️  ${req.method} ${req.url}`);
+  next();
+});
+
+// ===============================================
+// 🛠️ PATCH DE COMPATIBILIDAD (FRONTEND ANTIGUO)
+// ===============================================
+// Antes los frontends llamaban a /modules/<mod> directamente.
+// El backend nuevo exige: /api/modules/<mod>
+// Este patch reescribe rutas antiguas sin romper nada.
+app.post("/modules/:mod", (req, res, next) => {
+  const newUrl = `/api/modules/${req.params.mod}`;
+  console.log(`🔀 [PATCH] /modules/${req.params.mod} → ${newUrl}`);
+  req.url = newUrl;
+  next();
+});
+
+// ===============================================
+// RUTAS NUEVAS OFICIALES BAJO /api/modules/
+// ===============================================
+app.use("/api/modules", (req, res, next) => {
+  next();
+});
+
+// Registro REAL de módulos
+registerTokkenRoutes(app);
+registerIaVipComRoutes(app);
+registerComunicaRoutes(app);
+registerErpevRoutes(app);
+registerVentasRoutes(app);
+registerDemoRoutes(app);
+
+// ===============================================
+// STATIC FILES (si tienes front hospedado aquí)
+// ===============================================
+// app.use(express.static("public"));  // si lo usas
+
+// ===============================================
+// SERVIDOR LISTO
+// ===============================================
 const PORT = process.env.PORT || 10000;
 
-// Ruta de salud
-app.get("/", (req, res) => {
-  res.send("Esteborg backend modular está vivo ✅");
-});
-
-// Registrar módulos principales
-registerEsteborgFullRoutes(app, openai);
-registerComunicaRoutes(app, openai);
-registerVentasRoutes(app, openai);
-registerErpevRoutes(app, openai);
-registerDemoRoutes(app, openai);
-registerIaVipComRoutes(app, openai);
-
-// Módulo Tokken Members (generate-token)
-registerTokkenRoutes(app);
-
-// Rutas de voz (ElevenLabs)
-registerVoiceRoutes(app);
-
-// 404 genérico por si alguien pega a una ruta que no existe
-app.use((req, res) => {
-  return res.status(404).json({
-    error: "not_found",
-    message: "Ruta no encontrada en el backend de Esteborg.",
-  });
-});
-
-// Arrancar servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Esteborg modular escuchando en puerto ${PORT}`);
 });
