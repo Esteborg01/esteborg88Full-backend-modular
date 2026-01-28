@@ -1,52 +1,85 @@
 // src/modules/iavipcomRoutes.mjs
 
 import { Router } from "express";
-import { processIaVipComMessage } from "../services/iavipcomService.mjs";
 import { validateTokken } from "../utils/tokken.mjs";
+import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
 const router = Router();
 
-// POST /api/modules/iavipcom
-router.post("/", async (req, res) => {
-  try {
-    const { message, token } = req.body;
+/**
+ * Si más adelante quieres volver a usar eventos [ESTEBORG_EVENT ...],
+ * aquí podríamos parsearlos. Por ahora solo devolvemos el texto tal cual.
+ */
+function extractEsteborgEvents(text) {
+  return { cleanText: text, events: [] };
+}
 
-    if (!message || !token) {
-      return res.status(400).json({
-        error: "missing_fields",
-        message: "message y token son requeridos",
+export function registerIaVipComRoutes(app, openai) {
+  router.post("/api/modules/iavipcom", async (req, res) => {
+    try {
+      const {
+        message,
+        rawToken,
+        token: bodyToken,
+        history,
+        userName,
+        lang,
+      } = req.body || {};
+
+      // 1) Validar mensaje
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({
+          error: "missing_message",
+          message: "El campo 'message' es requerido.",
+        });
+      }
+
+      // 2) Tomar token de donde venga (rawToken o token)
+      const tokenStr = rawToken || bodyToken || "";
+
+      if (!tokenStr) {
+        return res.status(400).json({
+          error: "missing_token",
+          message: "No se recibió Tokken Esteborg Members.",
+        });
+      }
+
+      // 3) Validar tokken con tu util REAL
+      const tokenResult = validateTokken(tokenStr);
+      const tokenInfo = tokenResult?.tokenInfo || null;
+
+      // (si quieres ponerte más exigente puedes rebotar aquí si es inválido)
+      // if (!tokenResult?.valid) { ... }
+
+      const email = tokenInfo?.email || null;
+
+      // 4) Llamar al servicio que habla con OpenAI
+      const replyRaw = await getIaVipComReply(openai, {
+        message,
+        history,
+        userName,
+        lang,
+        email,
+      });
+
+      const { cleanText: reply, events } = extractEsteborgEvents(replyRaw);
+
+      return res.json({
+        reply,
+        tokenStatus: tokenResult?.status || "valid",
+        tokenInfo,
+        progressEvents: events,
+      });
+    } catch (err) {
+      console.error("❌ Error en /api/modules/iavipcom:", err);
+      return res.status(500).json({
+        error: "internal_error",
+        message:
+          "Ocurrió un error inesperado en el módulo Esteborg IA - Despliega todo tu poder.",
       });
     }
+  });
 
-    const tokenData = validateTokken(token);
-
-    if (!tokenData?.email) {
-      return res.status(401).json({
-        error: "invalid_token",
-        message: "Tokken inválido",
-      });
-    }
-
-    const userEmail = tokenData.email;
-
-    const aiResponse = await processIaVipComMessage({
-      message,
-      userEmail,
-    });
-
-    return res.json({
-      ok: true,
-      response: aiResponse,
-    });
-  } catch (err) {
-    console.error("❌ Error en IA VIP:", err);
-    return res.status(500).json({
-      error: "internal_error",
-      message: "Hubo un error procesando la IA VIP",
-    });
-  }
-});
-
-export function registerIaVipComRoutes(app) {
-  app.use("/api/modules/iavipcom", router);
+  // Montamos el router en raíz (como tus otros módulos)
+  app.use("/", router);
 }
