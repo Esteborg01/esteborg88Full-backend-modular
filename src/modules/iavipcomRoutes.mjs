@@ -1,57 +1,57 @@
 // src/modules/iavipcomRoutes.mjs
-
-import { Router } from "express";
+import express from "express";
+import { openai } from "../utils/openaiClient.mjs";
+import { validateTokken } from "../utils/tokken.mjs";
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
-export function registerIaVipComRoutes(app, openai) {
-  const router = Router();
+export const iavipcomRouter = express.Router();
 
-  // Ruta principal del módulo IA VIP
-  router.post("/api/modules/iavipcom", async (req, res) => {
-    try {
-      const {
-        message,
-        history = [],
-        lang = "es",
-        userName,
-        token,
-        tokenStatus,
-        tokenInfo,
-      } = req.body || {};
+// POST /api/modules/iavipcom
+iavipcomRouter.post("/", async (req, res) => {
+  try {
+    const {
+      message = "",
+      history = [],
+      userName = "",
+      lang = "es",
+      token = "",
+    } = req.body;
 
-      if (!message) {
-        return res.status(400).json({
-          error: "missing_message",
-          message: "El mensaje del usuario es requerido.",
-        });
-      }
+    // Validación de tokken idéntica a la de Com7
+    const { tokenStatus, tokenInfo } = validateTokken(token);
 
-      // 👇 Igual que en comunica/erpev/ventas:
-      const result = await getIaVipComReply(openai, {
-        message,
-        history,
-        lang,
-        userName,
-        token,
-        tokenStatus,
-        tokenInfo,
-      });
-
-      // result debe traer al menos: { reply: "...", ...meta }
-      return res.json({
+    if (tokenStatus === "invalid") {
+      return res.status(401).json({
         module: "iavipcom",
-        ...result,
-      });
-    } catch (err) {
-      console.error("❌ Error en /api/modules/iavipcom:", err);
-      return res.status(500).json({
-        error: "internal_error",
-        message:
-          "Ocurrió un error al procesar tu entrenamiento con Esteborg IA – Despliega tu poder.",
+        reply:
+          "Tu Tokken Esteborg Members no es válido o expiró. Por favor, obtén uno nuevo en https://membersvip.esteborg.live/#miembrosvip",
+        tokenStatus,
       });
     }
-  });
 
-  // Montamos en raíz como los demás módulos
-  app.use("/", router);
-}
+    // Construcción correcta del payload que pide el service
+    const reply = await getIaVipComReply(openai, {
+      message,
+      history,
+      userName,
+      lang,
+      token,
+      tokenStatus,
+      tokenInfo,
+    });
+
+    return res.status(200).json({
+      module: "iavipcom",
+      reply,
+      tokenStatus,
+      tokenInfo,
+    });
+  } catch (error) {
+    console.error("[IAVIPCOM ERROR]", error);
+    return res.status(500).json({
+      module: "iavipcom",
+      reply:
+        "Hubo un error al procesar tu solicitud. Intenta nuevamente en unos momentos.",
+    });
+  }
+});
