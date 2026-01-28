@@ -1,47 +1,38 @@
-// src/modules/iavipcomRoutes.mjs
-import express from "express";
-import { iavipcomService } from "../services/iavipcomService.mjs";
-import { verifyTokken } from "../utils/tokken.mjs";
+import { Router } from "express";
+import { validateTokken } from "../utils/tokken.mjs";
+import { getIaVipComReply } from "../services/iavipcomService.mjs";
 
-const router = express.Router();
+const router = Router();
 
-// POST /api/modules/iavipcom
+// Middleware de validación de Tokken Esteborg Members
+router.use((req, res, next) => {
+  const rawToken = req.headers["x-tokken"] || "";
+
+  const result = validateTokken(rawToken);
+  if (!result.isValid) {
+    return res.status(401).json({
+      error: "invalid_token",
+      message: "Tokken inválido o ausente",
+    });
+  }
+
+  req.user = result;
+  next();
+});
+
+// POST principal del módulo
 router.post("/", async (req, res) => {
   try {
-    const { message, userName, lang = "es", tokken } = req.body;
-
-    // 1. Validación de token
-    const tokenInfo = verifyTokken(tokken);
-    if (!tokenInfo.valid) {
-      return res.status(200).json({
-        module: "iavipcom",
-        reply:
-          "❌ Tu Tokken Esteborg Members no es válido. Verifica tu membresía en https://membersvip.esteborg.live/#miembrosvip",
-        tokenStatus: "invalid",
-      });
-    }
-
-    // 2. Ejecutar servicio
-    const reply = await iavipcomService({
-      message,
-      userName,
-      lang,
-      history: req.body.history || [],
-    });
-
-    return res.status(200).json({
-      module: "iavipcom",
-      reply,
-      tokenStatus: "valid",
-      tokenInfo,
-    });
+    const { message } = req.body || {};
+    const reply = await getIaVipComReply({ message, user: req.user });
+    return res.json({ reply });
   } catch (err) {
-    console.error("[IAvipCom ERROR]", err);
-    return res.status(500).json({
-      module: "iavipcom",
-      reply: "⚠️ Estamos experimentando un problema. Intenta en unos momentos.",
-    });
+    console.error("❌ Error en IA VipCom:", err);
+    return res.status(500).json({ error: "internal_error" });
   }
 });
 
-export { router as iavipcomRoutes };
+// ESTA ES LA PUTA FUNCIÓN QUE TE FALTABA
+export function registerIaVipComRoutes(app) {
+  app.use("/api/modules/iavipcom", router);
+}
