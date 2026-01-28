@@ -1,13 +1,16 @@
 // src/utils/tokken.mjs
-// Validador unificado para Tokken Esteborg Members
-// - NO usa jsonwebtoken (no dependencias extra)
-// - Soporta JWT tipo Outseta: header.payload.signature
-// - Soporta token legacy: base64url(JSON)
+// ✅ Validador unificado para Tokken Esteborg Members (compat total)
+// - Soporta JWT Outseta: header.payload.signature
+// - Soporta legacy: base64url(JSON)
+// - IMPORTANTE: NO async (tus módulos lo usan sin await)
 
 const SAFE_CLOCK_SKEW_SEC = 60; // tolerancia 1 min
 
 function base64UrlToString(b64url) {
-  const padded = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
+  const raw = String(b64url || "").trim();
+  const padded =
+    raw.replace(/-/g, "+").replace(/_/g, "/") +
+    "===".slice((raw.length + 3) % 4);
   return Buffer.from(padded, "base64").toString("utf8");
 }
 
@@ -23,10 +26,8 @@ function parseJwtPayload(token) {
 }
 
 function parseLegacyJsonToken(token) {
-  // legacy: token = base64url(JSON)
   try {
-    const raw = String(token || "").trim();
-    const jsonStr = base64UrlToString(raw);
+    const jsonStr = base64UrlToString(String(token || "").trim());
     return JSON.parse(jsonStr);
   } catch {
     return null;
@@ -48,69 +49,80 @@ function extractEmail(payload) {
 function isExpired(payload) {
   const now = Math.floor(Date.now() / 1000);
   const exp = payload?.exp;
-  if (!exp) return false; // si no trae exp, no lo invalidamos
-  return now > (Number(exp) + SAFE_CLOCK_SKEW_SEC);
+  if (!exp) return false;
+  return now > Number(exp) + SAFE_CLOCK_SKEW_SEC;
 }
 
-export async function validateTokken(token) {
+// ✅ COMPAT: tus routes esperan tokenResult.status y tokenResult.raw
+function makeResult(valid, reason, tokenInfo = {}) {
+  return {
+    // formato viejo esperado por routes:
+    status: valid ? "valid" : "invalid",
+    raw: tokenInfo,
+
+    // formato nuevo (útil):
+    valid,
+    reason,
+    tokenInfo,
+  };
+}
+
+// ✅ NO async (porque tus rutas NO hacen await)
+export function validateTokken(token) {
   const raw = String(token || "").trim();
 
   if (!raw || raw.length < 10) {
-    return { valid: false, reason: "missing_token", tokenInfo: {} };
+    return makeResult(false, "missing_token", {});
   }
 
-  // 1) JWT (Outseta típico)
-  const jwtPayload = raw.includes(".") ? parseJwtPayload(raw) : null;
-  if (jwtPayload) {
+  // 1) JWT
+  if (raw.includes(".")) {
+    const jwtPayload = parseJwtPayload(raw);
+    if (!jwtPayload) return makeResult(false, "unreadable_jwt", {});
+
     if (isExpired(jwtPayload)) {
-      return { valid: false, reason: "expired", tokenInfo: { email: extractEmail(jwtPayload) || null } };
+      return makeResult(false, "expired", { email: extractEmail(jwtPayload) || null });
     }
-    const email = extractEmail(jwtPayload);
-    // JWT válido “estructuralmente” (sin verificar firma)
-    return {
-      valid: true,
-      reason: "jwt_ok",
-      tokenInfo: {
-        email: email || null,
-        sub: jwtPayload.sub || null,
-        exp: jwtPayload.exp || null,
-        iss: jwtPayload.iss || null,
-      },
-    };
+
+    return makeResult(true, "jwt_ok", {
+      email: extractEmail(jwtPayload) || null,
+      sub: jwtPayload.sub || null,
+      exp: jwtPayload.exp || null,
+      iss: jwtPayload.iss || null,
+    });
   }
 
   // 2) Legacy base64url(JSON)
   const legacy = parseLegacyJsonToken(raw);
   if (legacy) {
-    const email = extractEmail(legacy);
-    return {
-      valid: true,
-      reason: "legacy_ok",
-      tokenInfo: {
-        email: email || null,
-        sub: legacy.sub || null,
-        exp: legacy.exp || null,
-      },
-    };
+    return makeResult(true, "legacy_ok", {
+      email: extractEmail(legacy) || null,
+      sub: legacy.sub || null,
+      exp: legacy.exp || null,
+    });
   }
 
-  return { valid: false, reason: "unreadable", tokenInfo: {} };
+  return makeResult(false, "unreadable", {});
 }
 
-// Compat: algunos routes estaban importando verifyTokken
-export async function verifyTokken(token) {
+// Compat por si algún módulo usa verifyTokken
+export function verifyTokken(token) {
   return validateTokken(token);
 }
 
-// Compat: tokkenRoutes estaba importando generateTokkenForUser.
-// Genera token "legacy" (base64url JSON). No es JWT, pero sirve para pruebas internas.
-export function generateTokkenForUser(email) {
+// Compat: generateTokkenForUser a veces se llama con objeto {email,...}
+export function generateTokkenForUser(input) {
+  const email =
+    typeof input === "string"
+      ? input
+      : (input?.email || "").toString();
+
   const payload = {
-    email: String(email || "").trim() || null,
+    email: email.trim() || null,
     iat: Math.floor(Date.now() / 1000),
   };
+
   const json = JSON.stringify(payload);
   const b64 = Buffer.from(json, "utf8").toString("base64");
-  // a base64url
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
