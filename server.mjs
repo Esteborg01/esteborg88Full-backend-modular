@@ -46,8 +46,6 @@ registerErpevRoutes(app, openai);
 registerDemoRoutes(app, openai);
 registerVoiceRoutes(app, openai);
 registerTokkenRoutes(app, openai);
-
-// ✅ IA VIP (sin romper los demás)
 registerIaVipComRoutes(app, openai);
 
 // Fallback 404
