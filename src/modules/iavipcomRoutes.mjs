@@ -56,7 +56,14 @@ export function registerIaVipComRoutes(app, openai) {
 
       // También aceptamos token en header para unificar con otros módulos
       const headerToken = req.headers["x-esteborg-token"];
-      const effectiveToken = rawToken || bodyToken || headerToken;
+
+const authHeader = req.headers["authorization"];
+const bearerToken =
+  typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : null;
+
+const effectiveToken = rawToken || bodyToken || headerToken || bearerToken;
 
       // Validar Tokken Esteborg Members
       const tokenResult = validateTokken(effectiveToken);
