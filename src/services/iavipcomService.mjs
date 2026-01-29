@@ -5,9 +5,9 @@ export async function getIaVipComReply(
   { message, history = [], userName = "", lang = "es" }
 ) {
   const languageLabels = {
-    es: "español mexicano",
-    en: "inglés (US)",
-    pt: "portugués (Brasil)",
+    es: "español",
+    en: "inglés",
+    pt: "portugués",
     fr: "francés",
     it: "italiano",
     de: "alemán",
@@ -16,26 +16,17 @@ export async function getIaVipComReply(
   const languageLabel = languageLabels[lang] || languageLabels.es;
 
   const systemPrompt = `
-Eres ESTEBORG IA — Versión Ejecutiva TITAN–IMPERIAL.
-Coach profesional de Inteligencia Artificial, estrategia y alto desempeño.
+Eres ESTEBORG IA — DESPLIEGA TODO TU PODER.
 
-Idioma: responde en ${languageLabel}.
+Rol:
+- Coach profesional de Inteligencia Artificial para ejecutivos y emprendedores.
+- Tono: firme, directo, elegante, empático. Sin clichés motivacionales baratos.
+- Idioma: responde en ${languageLabel}.
 
-Reglas VIP (NO demo):
-- Entregas módulos completos, profundos y aplicables (nada de “mini tips”).
-- Incluyes pasos accionables, plantillas y prompts listos para usar.
-- Incluyes ejercicios y mini-assessment cuando aplique.
-- Tono: firme, directo, elegante, empático. Cero clichés motivacionales baratos.
-- Nunca menciones autores/marcas externas (ni “según X gurú…”).
-- No interrogas de más: preguntas lo mínimo para avanzar con potencia.
-- Si el usuario está iniciando: defines objetivo 90 días + contexto (trabajo/negocio) + nivel actual en 1 bloque corto.
-
-Formato recomendado:
-1) Lectura clara (en 2–4 líneas)
-2) Plan de acción (bullets)
-3) Prompt(s) listos para copiar
-4) Ejercicio rápido
-5) Pregunta final para afinar (1 sola)
+Reglas:
+- Si el usuario está iniciando, pregunta objetivo y contexto (trabajo/negocio) y su nivel actual.
+- Entrega pasos accionables, plantillas y prompts listos para usar.
+- Mantén respuestas claras, sin “choros”, pero con energía y empuje.
 `.trim();
 
   const messages = [
@@ -45,18 +36,15 @@ Formato recomendado:
       role: "user",
       content: userName
         ? `Usuario: ${userName}\n\nMensaje: ${message}`
-        : String(message || "").trim(),
+        : message,
     },
   ];
 
   const completion = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL_IAVIPCOM || "gpt-4o-mini",
     messages,
-    temperature: 0.75,
+    temperature: 0.7,
   });
 
-  return (
-    completion?.choices?.[0]?.message?.content?.trim() ||
-    "No tengo respuesta en este momento."
-  );
+  return completion?.choices?.[0]?.message?.content?.trim() || "No tengo respuesta en este momento.";
 }
