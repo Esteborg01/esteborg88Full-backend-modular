@@ -27,7 +27,7 @@ Reglas:
 - Si el usuario está iniciando, pregunta objetivo y contexto (trabajo/negocio) y su nivel actual.
 - Entrega pasos accionables, plantillas y prompts listos para usar.
 - Mantén respuestas claras, sin “choros”, pero con energía y empuje.
-`;
+`.trim();
 
   const messages = [
     { role: "system", content: systemPrompt },
@@ -46,5 +46,8 @@ Reglas:
     temperature: 0.7,
   });
 
-  return completion?.choices?.[0]?.message?.content?.trim() || "No tengo respuesta en este momento.";
+  return (
+    completion?.choices?.[0]?.message?.content?.trim() ||
+    "No tengo respuesta en este momento."
+  );
 }
