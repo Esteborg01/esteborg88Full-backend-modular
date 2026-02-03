@@ -19,7 +19,7 @@ export async function getIaVipComReply(
   const safeHistory = sanitizeHistory(history);
 
   // 3) Cognitive/Psych/Density
-  const cognitiveHints = deriveCognitiveHints({ history: safeHistory, message });
+ const cognitiveHints = deriveCognitiveHints({ history: safeHistory, message, lang });
 
   // (Opcional) trae memoria actual por si luego quieres usarla en prompt
   getUserMemory(effectiveUserId);
