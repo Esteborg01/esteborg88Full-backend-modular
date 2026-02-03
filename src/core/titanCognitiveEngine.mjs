@@ -1,6 +1,7 @@
 // src/core/titanCognitiveEngine.mjs
 
-export function deriveCognitiveHints({ history = [], message = "" } = {}) {
+export function deriveCognitiveHints({ history = [], message = "", lang = "es" } = {}) {
+
   const lastUser = (history || [])
     .filter(m => m?.role === "user")
     .slice(-5)
