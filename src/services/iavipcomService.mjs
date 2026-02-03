@@ -182,7 +182,10 @@ function deriveOrgHints({ message = "", history = [] } = {}) {
     "aprobacion",
   ];
 
-  const orgMode = orgSignals.some((w) => text.includes(w));
+  const strongOrgSignals = [
+  "empresa", "corporativo", "presupuesto", "stakeholder", "comité", "board", "kpi", "okrs", "proceso", "aprobación", "aprobacion"
+];
+const orgMode = strongOrgSignals.some(w => text.includes(w));
 
   let roleLevel = "individual";
   if (
