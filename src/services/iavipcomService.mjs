@@ -1,32 +1,67 @@
 // src/services/iavipcomService.mjs
 import { buildIaVipComSystemPrompt } from "./iavipcomBrain.mjs";
+import { getUserMemory, updateUserMemory } from "./titanMemoryEngine.mjs";
+import { derivePsychState } from "./titanPsychEngine.mjs";
+import { deriveDensityProfile } from "./titanDensityEngine.mjs";
 
 export async function getIaVipComReply(
   openai,
-  { message, history = [], userName = "", lang = "es" }
+  { message, history = [], userName = "", lang = "es", userId = "anon" }
 ) {
-  const safeHistory = sanitizeHistory(history);
 
-  const cognitiveHints = deriveCognitiveHints({ history: safeHistory, message });
-  const orgHints = deriveOrgHints({ history: safeHistory, message });
+  const cognitiveHints = deriveCognitiveHints({ history, message });
 
-  const systemPrompt = buildIaVipComSystemPrompt({
-    lang,
+  const userMemory = getUserMemory(userId);
+
+  const psychState = derivePsychState({
     cognitiveHints,
-    orgHints,
+    history,
+    message
   });
 
+  const densityProfile = deriveDensityProfile({
+    psychState
+  });
+
+  updateUserMemory(userId, {
+    profile: {
+      maturity: cognitiveHints.maturity,
+      toolLevel: cognitiveHints.toolLevel,
+      phase: cognitiveHints.phase
+    },
+    psychologicalState: psychState,
+    densityState: densityProfile
+  });
+
+  const systemPrompt = buildIaVipComSystemPrompt(lang);
+
+  const enrichedSystemPrompt = `
+${systemPrompt}
+
+TITAN MEMORY CONTEXT
+User maturity: ${cognitiveHints.maturity}
+User tool level: ${cognitiveHints.toolLevel}
+Training phase: ${cognitiveHints.phase}
+
+Psychological state:
+Resistance: ${psychState.resistanceLevel}
+Confidence: ${psychState.confidenceLevel}
+Overwhelm risk: ${psychState.overwhelmRisk}
+
+Density preference:
+${densityProfile.preferredLength}
+`;
+
+  const safeHistory = Array.isArray(history) ? history : [];
+
   const messages = [
-    { role: "system", content: systemPrompt },
+    { role: "system", content: enrichedSystemPrompt },
     ...safeHistory.slice(-20),
     {
       role: "user",
-      // Opción A (recomendada): no forzar formato; deja que el brain pregunte nombre
-      content: String(message || "").trim(),
-      // Si INSISTES en incluir userName, usa esta versión B y comenta la A:
-      // content: userName
-      //   ? `Me llamo ${userName}. ${String(message || "").trim()}`
-      //   : String(message || "").trim(),
+      content: userName
+        ? `Usuario: ${userName}\nMensaje: ${message}`
+        : message,
     },
   ];
 
@@ -36,10 +71,8 @@ export async function getIaVipComReply(
     temperature: 0.7,
   });
 
-  return (
-    completion?.choices?.[0]?.message?.content?.trim() ||
-    "No tengo respuesta en este momento."
-  );
+  return completion?.choices?.[0]?.message?.content?.trim()
+    || "No tengo respuesta en este momento.";
 }
 
 function sanitizeHistory(history) {
