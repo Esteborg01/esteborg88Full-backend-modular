@@ -54,158 +54,273 @@ function sanitizeHistory(history) {
 }
 
 function deriveCognitiveHints({ history = [], message = "" } = {}) {
+
   const lastUser = (history || [])
-    .filter((m) => m.role === "user")
+    .filter(m => m.role === "user")
     .slice(-5)
-    .map((m) => (m.content || "").toLowerCase())
+    .map(m => (m.content || "").toLowerCase())
     .join(" ");
 
   const msg = (message || "").toLowerCase();
   const text = `${lastUser} ${msg}`;
 
-  // Fase
+
+  /* ===============================
+     PHASE DETECTION
+  =============================== */
+
   let phase = "discovery";
+
   if (
+    // ES
     text.includes("módulo") ||
     text.includes("modulo") ||
     text.includes("assessment") ||
     text.includes("evaluación") ||
-    text.includes("evaluacion")
+
+    // EN
+    text.includes("module") ||
+    text.includes("assessment") ||
+    text.includes("evaluation") ||
+
+    // PT
+    text.includes("módulo") ||
+    text.includes("avaliacao") ||
+    text.includes("avaliação") ||
+
+    // FR
+    text.includes("module") ||
+    text.includes("évaluation") ||
+    text.includes("evaluation") ||
+
+    // IT
+    text.includes("modulo") ||
+    text.includes("valutazione") ||
+
+    // DE
+    text.includes("modul") ||
+    text.includes("bewertung") ||
+    text.includes("prüfung")
   ) {
     phase = "training";
   }
+
   if (
+    // ES
     text.includes("implementar") ||
     text.includes("implementación") ||
-    text.includes("implementacion") ||
     text.includes("hoy mismo") ||
     text.includes("en mi equipo") ||
-    text.includes("en mi trabajo")
+
+    // EN
+    text.includes("implement") ||
+    text.includes("today") ||
+    text.includes("in my team") ||
+
+    // PT
+    text.includes("implementar") ||
+    text.includes("hoje") ||
+    text.includes("equipe") ||
+
+    // FR
+    text.includes("implémenter") ||
+    text.includes("aujourd") ||
+    text.includes("équipe") ||
+
+    // IT
+    text.includes("implementare") ||
+    text.includes("oggi") ||
+    text.includes("team") ||
+
+    // DE
+    text.includes("implementieren") ||
+    text.includes("heute") ||
+    text.includes("team")
   ) {
     phase = "execution";
   }
 
-  // Madurez
+
+  /* ===============================
+     MATURITY DETECTION
+  =============================== */
+
   let maturity = "unknown";
+
   if (
+    // ES
     text.includes("nunca he usado") ||
     text.includes("desde cero") ||
-    text.includes("principiante")
+    text.includes("principiante") ||
+
+    // EN
+    text.includes("never used") ||
+    text.includes("from scratch") ||
+    text.includes("beginner") ||
+
+    // PT
+    text.includes("nunca usei") ||
+    text.includes("do zero") ||
+    text.includes("iniciante") ||
+
+    // FR
+    text.includes("jamais utilisé") ||
+    text.includes("débutant") ||
+
+    // IT
+    text.includes("mai usato") ||
+    text.includes("principiante") ||
+
+    // DE
+    text.includes("nie benutzt") ||
+    text.includes("anfänger")
   ) {
     maturity = "beginner";
-  } else if (
+  }
+
+  if (
+    // ES
     text.includes("ya uso") ||
     text.includes("uso chatgpt") ||
     text.includes("prompts") ||
     text.includes("workflow") ||
-    text.includes("flujos")
+
+    // EN
+    text.includes("i use") ||
+    text.includes("using chatgpt") ||
+    text.includes("workflow") ||
+    text.includes("prompt") ||
+
+    // PT
+    text.includes("já uso") ||
+    text.includes("uso chatgpt") ||
+    text.includes("fluxo") ||
+
+    // FR
+    text.includes("j'utilise") ||
+    text.includes("workflow") ||
+    text.includes("prompt") ||
+
+    // IT
+    text.includes("uso già") ||
+    text.includes("workflow") ||
+
+    // DE
+    text.includes("ich nutze") ||
+    text.includes("workflow")
   ) {
     maturity = "intermediate";
-  } else if (
+  }
+
+  if (
+    // ES
     text.includes("agentes") ||
     text.includes("automatización") ||
-    text.includes("automatizacion") ||
     text.includes("api") ||
     text.includes("integración") ||
-    text.includes("integracion")
+
+    // EN
+    text.includes("agents") ||
+    text.includes("automation") ||
+    text.includes("api") ||
+    text.includes("integration") ||
+
+    // PT
+    text.includes("agentes") ||
+    text.includes("automação") ||
+    text.includes("api") ||
+    text.includes("integração") ||
+
+    // FR
+    text.includes("agents") ||
+    text.includes("automatisation") ||
+    text.includes("api") ||
+    text.includes("intégration") ||
+
+    // IT
+    text.includes("agenti") ||
+    text.includes("automazione") ||
+    text.includes("api") ||
+    text.includes("integrazione") ||
+
+    // DE
+    text.includes("agenten") ||
+    text.includes("automatisierung") ||
+    text.includes("api") ||
+    text.includes("integration")
   ) {
     maturity = "advanced";
   }
 
-  // Herramientas actuales
+
+  /* ===============================
+     TOOL LEVEL
+  =============================== */
+
   let toolLevel = "none";
+
   if (text.includes("chatgpt")) toolLevel = "chatgpt";
+
   if (
     text.includes("copilot") ||
-    text.includes("outlook") ||
     text.includes("excel") ||
-    text.includes("powerpoint") ||
+    text.includes("outlook") ||
     text.includes("word") ||
+    text.includes("powerpoint") ||
     text.includes("teams")
   ) {
     toolLevel = "copilot";
   }
+
   if (text.includes("gemini")) toolLevel = "gemini";
 
-  // Resistencia / saturación
+
+  /* ===============================
+     RESISTANCE / SATURATION
+  =============================== */
+
   let resistance = "unknown";
+
   if (
+    // ES
     text.includes("demasiado") ||
     text.includes("mucho texto") ||
-    text.includes("resúmelo") ||
-    text.includes("resumelo") ||
-    text.includes("muy largo")
+    text.includes("muy largo") ||
+
+    // EN
+    text.includes("too much") ||
+    text.includes("too long") ||
+
+    // PT
+    text.includes("muito longo") ||
+    text.includes("muito texto") ||
+
+    // FR
+    text.includes("trop long") ||
+    text.includes("trop de texte") ||
+
+    // IT
+    text.includes("troppo lungo") ||
+    text.includes("troppo testo") ||
+
+    // DE
+    text.includes("zu lang") ||
+    text.includes("zu viel text")
   ) {
     resistance = "high";
-  } else if (
+  }
+
+  else if (
     text.includes("ok") ||
+    text.includes("vale") ||
     text.includes("va") ||
     text.includes("dale") ||
-    text.includes("sigamos") ||
-    text.includes("perfecto")
+    text.includes("go") ||
+    text.includes("okey")
   ) {
     resistance = "low";
   }
 
+
   return { phase, maturity, toolLevel, resistance };
-}
-
-function deriveOrgHints({ message = "", history = [] } = {}) {
-  const lastUser = (history || [])
-    .filter((m) => m.role === "user")
-    .slice(-6)
-    .map((m) => (m.content || "").toLowerCase())
-    .join(" ");
-
-  const msg = (message || "").toLowerCase();
-  const text = `${lastUser} ${msg}`;
-
-  const orgSignals = [
-    "equipo",
-    "organización",
-    "organizacion",
-    "empresa",
-    "corporativo",
-    "director",
-    "gerente",
-    "stakeholder",
-    "comité",
-    "comite",
-    "board",
-    "presupuesto",
-    "kpi",
-    "okrs",
-    "proceso",
-    "política",
-    "politica",
-    "aprobación",
-    "aprobacion",
-  ];
-
-  const strongOrgSignals = [
-  "empresa", "corporativo", "presupuesto", "stakeholder", "comité", "board", "kpi", "okrs", "proceso", "aprobación", "aprobacion"
-];
-const orgMode = strongOrgSignals.some(w => text.includes(w));
-
-  let roleLevel = "individual";
-  if (
-    text.includes("director") ||
-    text.includes("vp") ||
-    text.includes("c-level") ||
-    text.includes("ceo") ||
-    text.includes("board") ||
-    text.includes("consejo")
-  ) {
-    roleLevel = "executive";
-  } else if (
-    text.includes("gerente") ||
-    text.includes("manager") ||
-    text.includes("líder") ||
-    text.includes("lider") ||
-    text.includes("jefe")
-  ) {
-    roleLevel = "manager";
-  }
-
-  return { orgMode, roleLevel };
 }
