@@ -1,8 +1,8 @@
 // src/services/iavipcomService.mjs
 import { buildIaVipComSystemPrompt } from "./iavipcomBrain.mjs";
-import { getUserMemory, updateUserMemory } from "../../core/titanMemoryEngine.mjs";
-import { derivePsychState } from "../../core/titanPsychEngine.mjs";
-import { deriveDensityProfile } from "../../core/titanDensityEngine.mjs";
+import { getUserMemory, updateUserMemory } from "./core/titanMemoryEngine.mjs";
+import { derivePsychState } from "./core/titanPsychEngine.mjs";
+import { deriveDensityProfile } from "./core/titanDensityEngine.mjs";
 
 export async function getIaVipComReply(
   openai,
