@@ -2,32 +2,33 @@
 
 import { buildIaVipComSystemPrompt } from "./iavipcomBrain.mjs";
 
+// Core engines (si ya los tienes en /src/core)
 import { deriveCognitiveHints } from "../core/titanCognitiveEngine.mjs";
 import { getUserMemory, updateUserMemory } from "../core/titanMemoryEngine.mjs";
 import { derivePsychState } from "../core/titanPsychEngine.mjs";
 import { deriveDensityProfile } from "../core/titanDensityEngine.mjs";
 
-// Progreso simple “dónde se quedó”
-import { getUserProgress, setUserProgress } from "../core/titanProgressEngine.mjs";
-
 export async function getIaVipComReply(
   openai,
-  { message, history = [], userName = "", lang = "es", userId = "anon" }
+  { message, history = [], userName = "", lang = "es", userId = "anon", session = null }
 ) {
-  const effectiveUserId = String((userId || "").trim().toLowerCase() || "anon");
-
   const safeHistory = sanitizeHistory(history);
 
-  // Cognitive/Psych/Density (Core)
-  const cognitiveHints = deriveCognitiveHints({ history: safeHistory, message, lang });
+  const cognitiveHints = deriveCognitiveHints({
+    history: safeHistory,
+    message,
+    lang,
+  });
 
-  // Memoria (Core)
-  getUserMemory(effectiveUserId);
+  // Memoria (persistente DB-ready en tu engine; mientras tanto puede ser in-memory)
+  const effectiveUserId = String(userId || "anon").trim().toLowerCase() || "anon";
+  const mem = getUserMemory(effectiveUserId);
 
   const psychState = derivePsychState({
     cognitiveHints,
     history: safeHistory,
     message,
+    session,
   });
 
   const densityProfile = deriveDensityProfile({ psychState });
@@ -37,65 +38,55 @@ export async function getIaVipComReply(
       maturity: cognitiveHints.maturity,
       toolLevel: cognitiveHints.toolLevel,
       phase: cognitiveHints.phase,
+      lang,
     },
     psychologicalState: psychState,
     densityState: densityProfile,
+    // sesión ligera
+    last: {
+      userName: userName || (session?.memory?.userName || ""),
+      lastUserMessage: message,
+      lastSeenAt: Date.now(),
+    },
   });
 
-  // Progreso (simple)
-  const prog = getUserProgress(effectiveUserId) || {
-    module: 1,
-    day: 1,
-    lastTool: "none",
-    lang,
-  };
-
-  // Avance ultra simple (no “curso”, solo checkpoint)
-  // Si el usuario dice “siguiente/continuar/next”, subimos 1 día (máx 20)
-  // multi-idioma mínimo
-  const m = String(message || "").toLowerCase();
-  const wantsNext =
-    m.includes("siguiente") ||
-    m.includes("continuar") ||
-    m.includes("sigamos") ||
-    m.includes("next") ||
-    m.includes("continue") ||
-    m.includes("continuer") ||
-    m.includes("suivant") ||
-    m.includes("continua") ||
-    m.includes("avanti") ||
-    m.includes("weiter") ||
-    m.includes("nächste") ||
-    m.includes("proximo") ||
-    m.includes("próximo");
-
-  if (wantsNext) {
-    setUserProgress(effectiveUserId, {
-      day: Math.min((prog.day || 1) + 1, 20),
-      lang,
-    });
-  } else {
-    // mínimo: guarda lang para re-entrada consistente
-    setUserProgress(effectiveUserId, { lang });
-  }
-
-  // System prompt (Brain multi-idioma)
+  // Brain base (NO tocar)
   const systemPrompt = buildIaVipComSystemPrompt(lang);
+
+  // Contexto interno: evita “reinicios” y repeticiones
+  const sessionTurn = Number(session?.turn || 0);
+  const sessionName = session?.memory?.userName || userName || "";
+  const sessionLastUser = session?.memory?.lastUserMessage || "";
+  const sessionLastAssistant = session?.memory?.lastAssistantMessage || "";
+  const sessionGoal90 = session?.memory?.goal90 || "";
+  const sessionLastFocus = session?.memory?.lastFocus || "";
 
   const enrichedSystemPrompt = `${systemPrompt}
 
 TITAN CONTEXT (internal)
-maturity=${cognitiveHints.maturity}
-tool=${cognitiveHints.toolLevel}
-phase=${cognitiveHints.phase}
-resistance=${psychState.resistanceLevel}
-overwhelm=${psychState.overwhelmRisk}
-density=${densityProfile.preferredLength}
+turn=${sessionTurn}
+lang=${lang}
+userName=${sessionName}
+goal90=${sessionGoal90}
+lastFocus=${sessionLastFocus}
+lastUser=${sessionLastUser}
+lastAssistant=${sessionLastAssistant}
 
-PROGRESS (internal)
-progress_module=${prog.module}
-progress_day=${prog.day}
-progress_lastTool=${prog.lastTool}
+cognitive.phase=${cognitiveHints.phase}
+cognitive.maturity=${cognitiveHints.maturity}
+cognitive.tool=${cognitiveHints.toolLevel}
+cognitive.resistance=${cognitiveHints.resistance}
+
+psych.resistance=${psychState.resistanceLevel}
+psych.overwhelm=${psychState.overwhelmRisk}
+
+density.preferred=${densityProfile.preferredLength}
+
+CRITICAL BEHAVIOR (internal)
+- If turn>0: NEVER ask again for Tokken. NEVER restart with “tell me your 90-day goal” unless the user explicitly asks to restart.
+- Continue from context. If the user changes topic, pivot WITHOUT resetting the session.
+- Do not use markdown headings, asterisks, or course-like structure.
+- Deliver one strong idea, then a natural CTA.
 `;
 
   const messages = [
