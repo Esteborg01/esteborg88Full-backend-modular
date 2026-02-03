@@ -1,14 +1,34 @@
-export function deriveDensityProfile({ psychState }) {
+export function derivePsychState({ cognitiveHints, history = [], message = "" }) {
 
-  let preferredLength = "medium";
+  let resistanceLevel = "medium";
+  let confidenceLevel = "medium";
+  let overwhelmRisk = "low";
 
-  if (psychState.overwhelmRisk === "high") {
-    preferredLength = "low";
+  if (cognitiveHints.resistance === "high") {
+    resistanceLevel = "high";
+    overwhelmRisk = "high";
   }
 
-  if (psychState.confidenceLevel === "high") {
-    preferredLength = "high";
+  if (cognitiveHints.maturity === "beginner") {
+    overwhelmRisk = "medium";
   }
 
-  return { preferredLength };
+  if (cognitiveHints.maturity === "advanced") {
+    confidenceLevel = "high";
+  }
+
+  const shortReplies = history
+    .slice(-5)
+    .filter(m => m.role === "user" && m.content.length < 10).length;
+
+  if (shortReplies >= 3) {
+    resistanceLevel = "high";
+    overwhelmRisk = "high";
+  }
+
+  return {
+    resistanceLevel,
+    confidenceLevel,
+    overwhelmRisk
+  };
 }
