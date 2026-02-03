@@ -1,34 +1,61 @@
-export function derivePsychState({ cognitiveHints, history = [], message = "" }) {
+// src/core/titanMemoryEngine.mjs
+// Memoria en RAM (Map) — DB-ready (luego lo cambias por Redis/Postgres sin tocar el resto)
 
-  let resistanceLevel = "medium";
-  let confidenceLevel = "medium";
-  let overwhelmRisk = "low";
+const memoryStore = new Map();
 
-  if (cognitiveHints.resistance === "high") {
-    resistanceLevel = "high";
-    overwhelmRisk = "high";
+/**
+ * Estructura:
+ * {
+ *   userId,
+ *   name,
+ *   profile: { maturity, toolLevel, phase },
+ *   psychologicalState: { resistanceLevel, confidenceLevel, overwhelmRisk },
+ *   densityState: { preferredLength, lastAdjust },
+ *   lastInteraction
+ * }
+ */
+
+export function getUserMemory(userId = "anon") {
+  const key = String(userId || "anon");
+
+  if (!memoryStore.has(key)) {
+    memoryStore.set(key, {
+      userId: key,
+      name: null,
+
+      profile: {
+        maturity: "unknown",
+        toolLevel: "none",
+        phase: "discovery",
+      },
+
+      psychologicalState: {
+        resistanceLevel: "medium",
+        confidenceLevel: "medium",
+        overwhelmRisk: "low",
+      },
+
+      densityState: {
+        preferredLength: "medium", // low | medium | high
+        lastAdjust: Date.now(),
+      },
+
+      lastInteraction: Date.now(),
+    });
   }
 
-  if (cognitiveHints.maturity === "beginner") {
-    overwhelmRisk = "medium";
-  }
+  return memoryStore.get(key);
+}
 
-  if (cognitiveHints.maturity === "advanced") {
-    confidenceLevel = "high";
-  }
+export function updateUserMemory(userId = "anon", updates = {}) {
+  const mem = getUserMemory(userId);
 
-  const shortReplies = history
-    .slice(-5)
-    .filter(m => m.role === "user" && m.content.length < 10).length;
+  if (updates.name !== undefined) mem.name = updates.name;
 
-  if (shortReplies >= 3) {
-    resistanceLevel = "high";
-    overwhelmRisk = "high";
-  }
+  if (updates.profile) Object.assign(mem.profile, updates.profile);
+  if (updates.psychologicalState) Object.assign(mem.psychologicalState, updates.psychologicalState);
+  if (updates.densityState) Object.assign(mem.densityState, updates.densityState);
 
-  return {
-    resistanceLevel,
-    confidenceLevel,
-    overwhelmRisk
-  };
+  mem.lastInteraction = Date.now();
+  return mem;
 }
