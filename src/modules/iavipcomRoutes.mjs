@@ -43,94 +43,81 @@ https://membersvip.esteborg.live/#miembrosvip`,
 };
 
 // ===============================
-// SESSION CACHE (4h TTL)
+// SESSION ENGINE (in-memory)
 // ===============================
 const ACTIVE_SESSIONS = new Map();
 const SESSION_TTL = 1000 * 60 * 60 * 4; // 4 horas
 
 function normalizeLang(lang) {
-  return typeof lang === "string" && FALLBACK_BY_LANG[lang] ? lang : "es";
+  const key = typeof lang === "string" ? lang.toLowerCase() : "es";
+  return FALLBACK_BY_LANG[key] ? key : "es";
 }
 
-function sanitizeHistory(history) {
-  if (!Array.isArray(history)) return [];
-  return history
-    .filter((m) => m && typeof m === "object")
-    .map((m) => ({
-      role: m.role === "assistant" || m.role === "user" ? m.role : "user",
-      content: typeof m.content === "string" ? m.content : String(m.content ?? ""),
-    }))
-    .filter((m) => m.content.trim().length > 0);
+function getEffectiveToken(req, body = {}) {
+  const { rawToken, token: bodyToken } = body;
+
+  const headerToken = req.headers["x-esteborg-token"];
+
+  const authHeader = req.headers["authorization"];
+  const bearerToken =
+    typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice(7).trim()
+      : null;
+
+  return rawToken || bodyToken || headerToken || bearerToken || null;
 }
 
-function buildStableUserId(tokenInfo = {}, userName = "") {
-  if (typeof tokenInfo.email === "string" && tokenInfo.email.trim()) {
-    return tokenInfo.email.trim().toLowerCase();
+function getOrInitSession(effectiveToken, langKey) {
+  let session = ACTIVE_SESSIONS.get(effectiveToken) || null;
+
+  // TTL
+  if (session && Date.now() - session.createdAt > SESSION_TTL) {
+    ACTIVE_SESSIONS.delete(effectiveToken);
+    session = null;
   }
-  if (typeof tokenInfo.accountUid === "string" && tokenInfo.accountUid.trim()) {
-    return `acc:${tokenInfo.accountUid.trim()}`;
+
+  if (!session) {
+    session = {
+      createdAt: Date.now(),
+      lastSeenAt: Date.now(),
+      lang: langKey,
+      turn: 0,
+      // “Dónde se quedó”
+      memory: {
+        userName: "",
+        goal90: "",
+        lastUserMessage: "",
+        lastAssistantMessage: "",
+        lastFocus: "", // ej: "ensayos", "presentaciones", "marketing", etc.
+      },
+    };
+    ACTIVE_SESSIONS.set(effectiveToken, session);
+  } else {
+    session.lastSeenAt = Date.now();
+    session.lang = langKey;
   }
-  if (typeof tokenInfo.personUid === "string" && tokenInfo.personUid.trim()) {
-    return `person:${tokenInfo.personUid.trim()}`;
-  }
-  if (typeof userName === "string" && userName.trim()) {
-    return `name:${userName.trim().toLowerCase()}`;
-  }
-  return "anon";
+
+  return session;
 }
 
 export function registerIaVipComRoutes(app, openai) {
   app.post("/api/modules/iavipcom", async (req, res) => {
     try {
-      const { message, rawToken, token: bodyToken, userName, history, lang } = req.body || {};
-
-      // También aceptamos token en header para unificar con otros módulos
-      const headerToken = req.headers["x-esteborg-token"];
-
-      const authHeader = req.headers["authorization"];
-      const bearerToken =
-        typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
-          ? authHeader.slice(7).trim()
-          : null;
-
-      const effectiveToken = rawToken || bodyToken || headerToken || bearerToken;
+      const { message, userName, history, lang } = req.body || {};
 
       const langKey = normalizeLang(lang);
+      const effectiveToken = getEffectiveToken(req, req.body || {});
+      const tokenResult = validateTokken(effectiveToken);
 
-      // ===============================
-      // SESSION TTL CHECK
-      // ===============================
-      let session = effectiveToken ? ACTIVE_SESSIONS.get(effectiveToken) : null;
-
-      if (session && Date.now() - session.createdAt > SESSION_TTL) {
-        ACTIVE_SESSIONS.delete(effectiveToken);
-        session = null;
-      }
-
-      // ===============================
-      // VALIDATE TOKEN (only if no session)
-      // ===============================
-      if (!session) {
-        const tokenResult = validateTokken(effectiveToken);
-
-        // Tokken inválido / ausente → pide Tokken
-        if (tokenResult.status !== "valid") {
-          const fallbackReply = FALLBACK_BY_LANG[langKey];
-          return res.json({
-            module: "iavipcom",
-            reply: fallbackReply,
-            tokenStatus: tokenResult.status,
-            tokenInfo: tokenResult,
-          });
-        }
-
-        session = {
-          tokenInfo: tokenResult.tokenInfo || {},
-          createdAt: Date.now(),
-        };
-
-        // Guardamos sesión para no revalidar en cada request
-        ACTIVE_SESSIONS.set(effectiveToken, session);
+      // 🔐 Tokken inválido / ausente → pide Tokken
+      if (tokenResult.status !== "valid") {
+        const fallbackReply = FALLBACK_BY_LANG[langKey];
+        return res.json({
+          module: "iavipcom",
+          reply: fallbackReply,
+          tokenStatus: tokenResult.status,
+          tokenInfo: tokenResult,
+        });
       }
 
       // ✅ Tokken válido pero sin mensaje → error de cliente
@@ -141,23 +128,39 @@ export function registerIaVipComRoutes(app, openai) {
         });
       }
 
-      const safeHistory = sanitizeHistory(history);
-      const stableUserId = buildStableUserId(session.tokenInfo, userName);
+      // ✅ Sesión por Tokken
+      const session = getOrInitSession(effectiveToken, langKey);
 
-      // ✅ Tokken válido y mensaje correcto → llamamos al cerebro IAvip
+      // Guardar nombre si viene
+      if (typeof userName === "string" && userName.trim()) {
+        session.memory.userName = userName.trim();
+      }
+
+      // Guardar último mensaje usuario
+      session.memory.lastUserMessage = message.trim();
+
+      // ✅ Cerebro
       const reply = await getIaVipComReply(openai, {
         message,
-        history: safeHistory,
-        userName,
+        history,
+        userName: session.memory.userName || userName || "",
         lang: langKey,
-        userId: stableUserId,
+        // userId real “DB-ready”: por ahora usamos token; luego puedes usar personUid si lo traes
+        userId: (tokenResult?.tokenInfo?.personUid || effectiveToken || "anon"),
+        session,
       });
+
+      // Guardar último mensaje assistant + turn
+      session.turn += 1;
+      session.memory.lastAssistantMessage = String(reply || "").slice(0, 1200);
 
       return res.json({
         module: "iavipcom",
         reply,
         tokenStatus: "valid",
-        tokenInfo: session.tokenInfo,
+        tokenInfo: tokenResult.tokenInfo,
+        // (Opcional) debug
+        // session: { turn: session.turn, lang: session.lang }
       });
     } catch (err) {
       console.error("❌ Error en /api/modules/iavipcom:", err);
