@@ -1,55 +1,45 @@
 // src/services/iavipcomService.mjs
 import { buildIaVipComSystemPrompt } from "./iavipcomBrain.mjs";
-import { getUserMemory, updateUserMemory } from "./core/titanMemoryEngine.mjs";
-import { derivePsychState } from "./core/titanPsychEngine.mjs";
-import { deriveDensityProfile } from "./core/titanDensityEngine.mjs";
+import { deriveCognitiveHints } from "../core/titanCognitiveEngine.mjs";
+import { getUserMemory, updateUserMemory } from "../core/titanMemoryEngine.mjs";
+import { derivePsychState } from "../core/titanPsychEngine.mjs";
+import { deriveDensityProfile } from "../core/titanDensityEngine.mjs";
 
 export async function getIaVipComReply(
   openai,
   { message, history = [], userName = "", lang = "es", userId = "anon" }
 ) {
 
-  const cognitiveHints = deriveCognitiveHints({ history, message });
+  const userId = String((userName || "").trim().toLowerCase() || "anon"); // por ahora
+const cognitiveHints = deriveCognitiveHints({ history, message });
 
-  const userMemory = getUserMemory(userId);
+const mem = getUserMemory(userId);
 
-  const psychState = derivePsychState({
-    cognitiveHints,
-    history,
-    message
-  });
+const psychState = derivePsychState({ cognitiveHints, history, message });
+const densityProfile = deriveDensityProfile({ psychState });
 
-  const densityProfile = deriveDensityProfile({
-    psychState
-  });
-
-  updateUserMemory(userId, {
-    profile: {
-      maturity: cognitiveHints.maturity,
-      toolLevel: cognitiveHints.toolLevel,
-      phase: cognitiveHints.phase
-    },
-    psychologicalState: psychState,
-    densityState: densityProfile
-  });
+updateUserMemory(userId, {
+  profile: {
+    maturity: cognitiveHints.maturity,
+    toolLevel: cognitiveHints.toolLevel,
+    phase: cognitiveHints.phase,
+  },
+  psychologicalState: psychState,
+  densityState: densityProfile,
+});
 
   const systemPrompt = buildIaVipComSystemPrompt(lang);
 
   const enrichedSystemPrompt = `
 ${systemPrompt}
 
-TITAN MEMORY CONTEXT
-User maturity: ${cognitiveHints.maturity}
-User tool level: ${cognitiveHints.toolLevel}
-Training phase: ${cognitiveHints.phase}
-
-Psychological state:
-Resistance: ${psychState.resistanceLevel}
-Confidence: ${psychState.confidenceLevel}
-Overwhelm risk: ${psychState.overwhelmRisk}
-
-Density preference:
-${densityProfile.preferredLength}
+TITAN CONTEXT (internal)
+maturity=${cognitiveHints.maturity}
+tool=${cognitiveHints.toolLevel}
+phase=${cognitiveHints.phase}
+resistance=${psychState.resistanceLevel}
+overwhelm=${psychState.overwhelmRisk}
+density=${densityProfile.preferredLength}
 `;
 
   const safeHistory = Array.isArray(history) ? history : [];
