@@ -1,4 +1,5 @@
 // src/services/iavipcomService.mjs
+
 import { buildIaVipComSystemPrompt } from "./iavipcomBrain.mjs";
 
 import { deriveCognitiveHints } from "../core/titanCognitiveEngine.mjs";
@@ -6,22 +7,21 @@ import { getUserMemory, updateUserMemory } from "../core/titanMemoryEngine.mjs";
 import { derivePsychState } from "../core/titanPsychEngine.mjs";
 import { deriveDensityProfile } from "../core/titanDensityEngine.mjs";
 
+// Progreso simple “dónde se quedó”
+import { getUserProgress, setUserProgress } from "../core/titanProgressEngine.mjs";
+
 export async function getIaVipComReply(
   openai,
   { message, history = [], userName = "", lang = "es", userId = "anon" }
 ) {
-  // 1) userId efectivo (por ahora: si no viene userId, usamos userName; si no, anon)
-  const effectiveUserId = String(
-    (userId && userId !== "anon" ? userId : (userName || "")).trim().toLowerCase() || "anon"
-  );
+  const effectiveUserId = String((userId || "").trim().toLowerCase() || "anon");
 
-  // 2) Sanitizar history (para que OpenAI no reciba basura)
   const safeHistory = sanitizeHistory(history);
 
-  // 3) Cognitive/Psych/Density
- const cognitiveHints = deriveCognitiveHints({ history: safeHistory, message, lang });
+  // Cognitive/Psych/Density (Core)
+  const cognitiveHints = deriveCognitiveHints({ history: safeHistory, message, lang });
 
-  // (Opcional) trae memoria actual por si luego quieres usarla en prompt
+  // Memoria (Core)
   getUserMemory(effectiveUserId);
 
   const psychState = derivePsychState({
@@ -42,7 +42,44 @@ export async function getIaVipComReply(
     densityState: densityProfile,
   });
 
-  // 4) System prompt (NO tocamos tu brain)
+  // Progreso (simple)
+  const prog = getUserProgress(effectiveUserId) || {
+    module: 1,
+    day: 1,
+    lastTool: "none",
+    lang,
+  };
+
+  // Avance ultra simple (no “curso”, solo checkpoint)
+  // Si el usuario dice “siguiente/continuar/next”, subimos 1 día (máx 20)
+  // multi-idioma mínimo
+  const m = String(message || "").toLowerCase();
+  const wantsNext =
+    m.includes("siguiente") ||
+    m.includes("continuar") ||
+    m.includes("sigamos") ||
+    m.includes("next") ||
+    m.includes("continue") ||
+    m.includes("continuer") ||
+    m.includes("suivant") ||
+    m.includes("continua") ||
+    m.includes("avanti") ||
+    m.includes("weiter") ||
+    m.includes("nächste") ||
+    m.includes("proximo") ||
+    m.includes("próximo");
+
+  if (wantsNext) {
+    setUserProgress(effectiveUserId, {
+      day: Math.min((prog.day || 1) + 1, 20),
+      lang,
+    });
+  } else {
+    // mínimo: guarda lang para re-entrada consistente
+    setUserProgress(effectiveUserId, { lang });
+  }
+
+  // System prompt (Brain multi-idioma)
   const systemPrompt = buildIaVipComSystemPrompt(lang);
 
   const enrichedSystemPrompt = `${systemPrompt}
@@ -54,9 +91,13 @@ phase=${cognitiveHints.phase}
 resistance=${psychState.resistanceLevel}
 overwhelm=${psychState.overwhelmRisk}
 density=${densityProfile.preferredLength}
+
+PROGRESS (internal)
+progress_module=${prog.module}
+progress_day=${prog.day}
+progress_lastTool=${prog.lastTool}
 `;
 
-  // 5) Mensajes
   const messages = [
     { role: "system", content: enrichedSystemPrompt },
     ...safeHistory.slice(-20),
