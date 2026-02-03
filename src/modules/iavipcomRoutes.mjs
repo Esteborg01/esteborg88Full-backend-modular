@@ -42,45 +42,95 @@ Wenn du es noch nicht hast, kannst du es hier erhalten oder wiederherstellen:
 https://membersvip.esteborg.live/#miembrosvip`,
 };
 
+// ===============================
+// SESSION CACHE (4h TTL)
+// ===============================
+const ACTIVE_SESSIONS = new Map();
+const SESSION_TTL = 1000 * 60 * 60 * 4; // 4 horas
+
+function normalizeLang(lang) {
+  return typeof lang === "string" && FALLBACK_BY_LANG[lang] ? lang : "es";
+}
+
+function sanitizeHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((m) => m && typeof m === "object")
+    .map((m) => ({
+      role: m.role === "assistant" || m.role === "user" ? m.role : "user",
+      content: typeof m.content === "string" ? m.content : String(m.content ?? ""),
+    }))
+    .filter((m) => m.content.trim().length > 0);
+}
+
+function buildStableUserId(tokenInfo = {}, userName = "") {
+  if (typeof tokenInfo.email === "string" && tokenInfo.email.trim()) {
+    return tokenInfo.email.trim().toLowerCase();
+  }
+  if (typeof tokenInfo.accountUid === "string" && tokenInfo.accountUid.trim()) {
+    return `acc:${tokenInfo.accountUid.trim()}`;
+  }
+  if (typeof tokenInfo.personUid === "string" && tokenInfo.personUid.trim()) {
+    return `person:${tokenInfo.personUid.trim()}`;
+  }
+  if (typeof userName === "string" && userName.trim()) {
+    return `name:${userName.trim().toLowerCase()}`;
+  }
+  return "anon";
+}
+
 export function registerIaVipComRoutes(app, openai) {
   app.post("/api/modules/iavipcom", async (req, res) => {
     try {
-      const {
-        message,
-        rawToken,
-        token: bodyToken,
-        userName,
-        history,
-        lang,
-      } = req.body || {};
+      const { message, rawToken, token: bodyToken, userName, history, lang } = req.body || {};
 
       // También aceptamos token en header para unificar con otros módulos
       const headerToken = req.headers["x-esteborg-token"];
 
-const authHeader = req.headers["authorization"];
-const bearerToken =
-  typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
+      const authHeader = req.headers["authorization"];
+      const bearerToken =
+        typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
+          ? authHeader.slice(7).trim()
+          : null;
 
-const effectiveToken = rawToken || bodyToken || headerToken || bearerToken;
+      const effectiveToken = rawToken || bodyToken || headerToken || bearerToken;
 
-      // Validar Tokken Esteborg Members
-      const tokenResult = validateTokken(effectiveToken);
+      const langKey = normalizeLang(lang);
 
-      const langKey =
-        typeof lang === "string" && FALLBACK_BY_LANG[lang] ? lang : "es";
+      // ===============================
+      // SESSION TTL CHECK
+      // ===============================
+      let session = effectiveToken ? ACTIVE_SESSIONS.get(effectiveToken) : null;
 
-      // 🔐 Tokken inválido / ausente → pide Tokken
-      if (tokenResult.status !== "valid") {
-        const fallbackReply = FALLBACK_BY_LANG[langKey];
+      if (session && Date.now() - session.createdAt > SESSION_TTL) {
+        ACTIVE_SESSIONS.delete(effectiveToken);
+        session = null;
+      }
 
-        return res.json({
-          module: "iavipcom",
-          reply: fallbackReply,
-          tokenStatus: tokenResult.status,
-          tokenInfo: tokenResult,
-        });
+      // ===============================
+      // VALIDATE TOKEN (only if no session)
+      // ===============================
+      if (!session) {
+        const tokenResult = validateTokken(effectiveToken);
+
+        // Tokken inválido / ausente → pide Tokken
+        if (tokenResult.status !== "valid") {
+          const fallbackReply = FALLBACK_BY_LANG[langKey];
+          return res.json({
+            module: "iavipcom",
+            reply: fallbackReply,
+            tokenStatus: tokenResult.status,
+            tokenInfo: tokenResult,
+          });
+        }
+
+        session = {
+          tokenInfo: tokenResult.tokenInfo || {},
+          createdAt: Date.now(),
+        };
+
+        // Guardamos sesión para no revalidar en cada request
+        ACTIVE_SESSIONS.set(effectiveToken, session);
       }
 
       // ✅ Tokken válido pero sin mensaje → error de cliente
@@ -91,26 +141,29 @@ const effectiveToken = rawToken || bodyToken || headerToken || bearerToken;
         });
       }
 
+      const safeHistory = sanitizeHistory(history);
+      const stableUserId = buildStableUserId(session.tokenInfo, userName);
+
       // ✅ Tokken válido y mensaje correcto → llamamos al cerebro IAvip
       const reply = await getIaVipComReply(openai, {
         message,
-        history,
+        history: safeHistory,
         userName,
         lang: langKey,
+        userId: stableUserId,
       });
 
       return res.json({
         module: "iavipcom",
         reply,
         tokenStatus: "valid",
-        tokenInfo: tokenResult.tokenInfo,
+        tokenInfo: session.tokenInfo,
       });
     } catch (err) {
       console.error("❌ Error en /api/modules/iavipcom:", err);
       return res.status(500).json({
         error: "internal_error",
-        message:
-          "Ocurrió un error inesperado en el módulo Esteborg IA (VIP).",
+        message: "Ocurrió un error inesperado en el módulo Esteborg IA (VIP).",
       });
     }
   });
