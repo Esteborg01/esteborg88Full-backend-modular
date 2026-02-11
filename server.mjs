@@ -35,6 +35,10 @@ app.use("/api", healthRoutes);
 
 const PORT = process.env.PORT || 10000;
 
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
+
 // Health
 app.get("/", (req, res) => {
   res.send("Esteborg backend modular está vivo ✅");
