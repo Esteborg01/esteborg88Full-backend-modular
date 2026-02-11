@@ -19,6 +19,7 @@ import { registerDemoRoutes } from "./src/modules/demoWelcomeRoutes.mjs";
 import { registerVoiceRoutes } from "./src/modules/voiceRoutes.mjs";
 import { registerTokkenRoutes } from "./src/modules/tokkenRoutes.mjs";
 import { registerIaVipComRoutes } from "./src/modules/iavipcomRoutes.mjs";
+import healthRoutes from "./src/routes/healthRoutes.mjs";
 
 dotenv.config();
 
@@ -30,6 +31,7 @@ app.use(express.json({ limit: "2mb" }));
 app.use(rateLimiter);
 app.use(longMessageGuard);
 app.use(compressHistoryMiddleware);
+app.use("/api", healthRoutes);
 
 const PORT = process.env.PORT || 10000;
 
