@@ -27,6 +27,10 @@ dotenv.config();
 
 const app = express();
 
+import authRoutes from "./src/routes/authRoutes.mjs";
+
+app.use("/api", authRoutes);
+
 // CORS (simple por ahora; luego lo endurecemos)
 app.use(cors());
 
