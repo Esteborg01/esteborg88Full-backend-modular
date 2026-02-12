@@ -48,12 +48,10 @@ router.post("/auth/register", async (req, res) => {
       plan: userDoc.plan,
       vipExpiresAt: userDoc.vipExpiresAt,
     });
-      } catch (err) {
-    // ✅ Duplicate key error (email UNIQUE)
+        } catch (err) {
     if (err?.code === 11000) {
       return res.status(409).json({ ok: false, error: "email_already_exists" });
     }
-
     console.error("register error:", err);
     return res.status(500).json({ ok: false, error: "internal_error" });
   }
