@@ -20,37 +20,36 @@ import { registerVoiceRoutes } from "./src/modules/voiceRoutes.mjs";
 import { registerTokkenRoutes } from "./src/modules/tokkenRoutes.mjs";
 import { registerIaVipComRoutes } from "./src/modules/iavipcomRoutes.mjs";
 
-// Health routes
+// Rutas base
 import healthRoutes from "./src/routes/healthRoutes.mjs";
+import authRoutes from "./src/routes/authRoutes.mjs";
 
 dotenv.config();
 
 const app = express();
 
-import authRoutes from "./src/routes/authRoutes.mjs";
-
-app.use("/api", authRoutes);
-
-// CORS (simple por ahora; luego lo endurecemos)
+// 1) CORS primero
 app.use(cors());
 
-// Body parser
+// 2) Body parsers ANTES de cualquier ruta (para que req.body NO sea undefined)
 app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-// Middlewares comunes
+// 3) Middlewares comunes
 app.use(rateLimiter);
 app.use(longMessageGuard);
 app.use(compressHistoryMiddleware);
 
-// Health endpoints
+// 4) Rutas base
 app.use("/api", healthRoutes);
+app.use("/api", authRoutes);
 
 // Root health
 app.get("/", (req, res) => {
   res.send("Esteborg backend modular está vivo ✅");
 });
 
-// Registrar módulos (rutas)
+// 5) Registrar módulos (rutas)
 registerEsteborgFullRoutes(app, openai);
 registerComunicaRoutes(app, openai);
 registerVentasRoutes(app, openai);
@@ -60,18 +59,18 @@ registerVoiceRoutes(app, openai);
 registerTokkenRoutes(app, openai);
 registerIaVipComRoutes(app, openai);
 
-// Fallback 404 (si no encontró ruta)
+// 6) Fallback 404 (si no encontró ruta)
 app.use((req, res) => {
   res.status(404).json({ error: "not_found", path: req.path });
 });
 
-// Error handler (último)
+// 7) Error handler (último)
 app.use((err, req, res, next) => {
   console.error("❌ Unhandled error:", err);
   res.status(500).json({ error: "internal_error" });
 });
 
-// LISTEN (UNA SOLA VEZ, AL FINAL)
+// 8) LISTEN (UNA SOLA VEZ, AL FINAL)
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
