@@ -1,69 +1,65 @@
+// src/modules/voiceRoutes.mjs
 import { synthesizeWithElevenLabs } from "../services/elevenlabsService.mjs";
-import { requireAuth } from "../middleware/requireAuth.mjs";
-import { requireVip } from "../middleware/requireVip.mjs";
 
-const LOCKED_VOICE_ID = "IdhxxSTaAg80CTeSgScm";
-
-const DEFAULT_STABILITY = 0.55;
-const DEFAULT_STYLE = 0.35;
-const DEFAULT_SIMILARITY = 0.85;
-const DEFAULT_SPEAKER_BOOST = true;
+const ALLOWED_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "IdhxxSTaAg80CTeSgScm";
 
 function clamp01(v, fallback) {
   const n = Number(v);
-  if (Number.isNaN(n)) return fallback;
+  if (!Number.isFinite(n)) return fallback;
   return Math.max(0, Math.min(1, n));
 }
 
-function toBool(v) {
-  if (typeof v === "boolean") return v;
-  if (typeof v === "string") return ["true", "1", "yes", "on"].includes(v.toLowerCase());
-  if (typeof v === "number") return v === 1;
-  return false;
-}
-
 export function registerVoiceRoutes(app) {
-  app.post("/api/voice", requireAuth, requireVip(), async (req, res) => {
+  app.post("/api/voice", async (req, res) => {
     try {
       const body = req.body || {};
-      const text = (body.text ?? "").toString().trim();
+      const text = typeof body.text === "string" ? body.text : "";
 
-      if (!text) {
-        return res.status(400).json({ ok: false, error: "missing_text" });
-      }
-
-      // ✅ VOZ APAGADA POR DEFAULT
-      // Solo generamos audio si el request lo pide explícitamente.
-      const enabled = toBool(body.enabled ?? body.voice ?? false);
-
-      if (!enabled) {
-        return res.json({
-          ok: true,
-          voice: false,
-          text,
-          hint: "Set enabled:true to receive audio/mpeg."
+      if (!text.trim()) {
+        return res.status(400).json({
+          error: "missing_text",
+          message: "Falta el campo 'text' para sintetizar voz.",
         });
       }
 
-      const finalStability = clamp01(body.stability, DEFAULT_STABILITY);
-      const finalStyle = clamp01(body.style, DEFAULT_STYLE);
+      // Opcional: límite duro de texto (seguridad/costo)
+      const safeText = text.length > 800 ? text.slice(0, 800) : text;
+
+      // Acepta voiceId pero SOLO permite tu voz (para que los GPTs no cambien voz)
+      const requestedVoiceId =
+        typeof body.voiceId === "string" && body.voiceId.trim()
+          ? body.voiceId.trim()
+          : ALLOWED_VOICE_ID;
+
+      if (requestedVoiceId !== "IdhxxSTaAg80CTeSgScm") {
+        return res.status(403).json({
+          error: "voice_not_allowed",
+          message: "VoiceId no permitido.",
+        });
+      }
+
+      // Defaults seguros (suaves, naturales, sin exagerar)
+      const stability = clamp01(body.stability, 0.5);
+      const style = clamp01(body.style, 0.35);
 
       const audioBuffer = await synthesizeWithElevenLabs({
-        text,
-        voiceId: LOCKED_VOICE_ID,
-        stability: finalStability,
-        style: finalStyle,
-        similarityBoost: DEFAULT_SIMILARITY,
-        speakerBoost: DEFAULT_SPEAKER_BOOST
+        text: safeText,
+        voiceId: "IdhxxSTaAg80CTeSgScm",
+        voiceSettings: {
+          stability,
+          style,
+        },
       });
 
       res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Cache-Control", "no-store");
       return res.send(audioBuffer);
-
     } catch (err) {
-      console.error("❌ Voice error:", err);
-      return res.status(500).json({ ok: false, error: "tts_failed" });
+      console.error("❌ Error en /api/voice:", err);
+      return res.status(500).json({
+        error: "tts_failed",
+        message: "No se pudo generar la voz con ElevenLabs.",
+      });
     }
   });
 }
