@@ -8,7 +8,7 @@ const router = express.Router();
 // ✅ Registro (crea user + vipExpiresAt)
 router.post("/auth/register", async (req, res) => {
   try {
-    const { email, password, plan, modulesAllowed } = req.body;
+    const { email, password, plan, modulesAllowed } = req.body || {};
 
     if (!email || !password) {
       return res.status(400).json({ ok: false, error: "email_and_password_required" });
