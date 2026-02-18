@@ -2,6 +2,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import billingRoutes from "./src/routes/billingRoutes.mjs";
 
 import { compressHistoryMiddleware } from "./src/middleware/compressHistory.mjs";
 import { rateLimiter } from "./src/middleware/rateLimiter.mjs";
@@ -35,6 +36,9 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+// ✅ Stripe webhook necesita RAW body
+app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
+
 // 3) Middlewares comunes
 app.use(rateLimiter);
 app.use(longMessageGuard);
@@ -43,6 +47,7 @@ app.use(compressHistoryMiddleware);
 // 4) Rutas base
 app.use("/api", healthRoutes);
 app.use("/api", authRoutes);
+app.use("/api", billingRoutes);
 
 // Root health
 app.get("/", (req, res) => {
