@@ -17,14 +17,14 @@ function priceIdFromPlan(plan) {
   return map[plan] || null;
 }
 
-// ✅ Crear checkout (pago único) - requiere login
+// ✅ Crear Checkout (PAGO ÚNICO) — requiere login
 router.post("/billing/checkout", requireAuth, async (req, res) => {
   try {
     const { plan } = req.body || {};
     if (!plan) return res.status(400).json({ ok: false, error: "plan_required" });
 
-    const planCfg = getPlanConfig(plan);
-    if (!planCfg) return res.status(400).json({ ok: false, error: "invalid_plan" });
+    const cfg = getPlanConfig(plan);
+    if (!cfg) return res.status(400).json({ ok: false, error: "invalid_plan" });
 
     const priceId = priceIdFromPlan(plan);
     if (!priceId) return res.status(400).json({ ok: false, error: "price_not_found" });
@@ -40,8 +40,8 @@ router.post("/billing/checkout", requireAuth, async (req, res) => {
       cancel_url: `${appUrl}/#miembrosvip?canceled=1`,
       metadata: {
         plan,
-        userEmail: (req.user?.email || "").toLowerCase().trim()
-      }
+        userEmail: String(req.user?.email || "").toLowerCase().trim(),
+      },
     });
 
     return res.json({ ok: true, url: session.url });
@@ -51,15 +51,15 @@ router.post("/billing/checkout", requireAuth, async (req, res) => {
   }
 });
 
-// ✅ Webhook Stripe (necesita RAW body; lo montamos especial en server.mjs)
+// ✅ Webhook Stripe — requiere RAW body (lo montamos especial en server.mjs)
 router.post("/billing/webhook", async (req, res) => {
   try {
-    const stripe = stripeClient();
-    const sig = req.headers["stripe-signature"];
-
     if (!process.env.STRIPE_WEBHOOK_SECRET) {
       return res.status(500).json({ ok: false, error: "STRIPE_WEBHOOK_SECRET_missing" });
     }
+
+    const stripe = stripeClient();
+    const sig = req.headers["stripe-signature"];
 
     let event;
     try {
@@ -73,15 +73,17 @@ router.post("/billing/webhook", async (req, res) => {
       const session = event.data.object;
 
       const plan = session?.metadata?.plan;
-      const email = (session?.metadata?.userEmail || session?.customer_details?.email || "").toLowerCase().trim();
+      const email = (session?.metadata?.userEmail || session?.customer_details?.email || "")
+        .toLowerCase()
+        .trim();
 
-      const planCfg = getPlanConfig(plan);
-      if (!planCfg || !email) return res.json({ ok: true });
+      const cfg = getPlanConfig(plan);
+      if (!cfg || !email) return res.json({ ok: true });
 
       const db = await getDb();
       const users = db.collection("users");
 
-      const vipExpiresAt = addDays(new Date(), planCfg.days);
+      const vipExpiresAt = addDays(new Date(), cfg.days);
 
       await users.updateOne(
         { email },
@@ -89,11 +91,12 @@ router.post("/billing/webhook", async (req, res) => {
           $set: {
             status: "active",
             plan,
-            modulesAllowed: planCfg.modulesAllowed,
+            modulesAllowed: cfg.modulesAllowed,
             vipExpiresAt,
             lastPaymentAt: new Date(),
-            stripeCustomerId: session.customer || null
-          }
+            stripeCustomerId: session.customer || null,
+            updatedAt: new Date(),
+          },
         }
       );
     }
