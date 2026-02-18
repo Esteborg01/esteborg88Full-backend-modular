@@ -32,12 +32,12 @@ const app = express();
 // 1) CORS primero
 app.use(cors());
 
+// ✅ Stripe webhook necesita RAW body
+app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
+
 // 2) Body parsers ANTES de cualquier ruta (para que req.body NO sea undefined)
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
-
-// ✅ Stripe webhook necesita RAW body
-app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
 
 // 3) Middlewares comunes
 app.use(rateLimiter);
