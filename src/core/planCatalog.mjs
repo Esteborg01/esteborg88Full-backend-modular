@@ -1,19 +1,22 @@
 // src/core/planCatalog.mjs
-// Catálogo de planes (ajustable). Controla: duración + módulos permitidos.
-
 export function getPlanConfig(planKey) {
   const plans = {
-    // ✅ Ajusta si quieres que "IA Experto" incluya más módulos
-    planesteborgiaexperto: { days: 90, modulesAllowed: ["iavipcom"] },
-
-    planesteborg7diascom: { days: 30, modulesAllowed: ["comunica"] },
+    // 30 días (módulos individuales)
+    planesteborg7diascom: { days: 30, modulesAllowed: ["comunica"] }, // (nombre raro, pero respetamos tu ID)
     planesteborg7diasvts: { days: 30, modulesAllowed: ["ventas"] },
-    evaluatuerp: { days: 39, modulesAllowed: ["erpev"] },
-    planesteborgcoach1hr: { days: 3650, modulesAllowed: ["coach1hr"] },
-    planesteborg7diasbund: { days: 30, modulesAllowed: ["comunica", "ventas"] },
-    vippremium: { days: 90, modulesAllowed: ["comunica", "ventas", "iavipcom"] },
-    esteborgmaster: { days: 360, modulesAllowed: ["comunica", "ventas", "iavipcom", "erpev"] },
+    evaluatuerp:          { days: 30, modulesAllowed: ["erpev"] },
+
+    // 90 días (IA VIP y Premium)
+    planesteborgiaexperto: { days: 90, modulesAllowed: ["iavipcom"] }, // asumiendo que “IA Experto” = IA VIP
+    vippremium:            { days: 90, modulesAllowed: ["iavipcom"] }, // si Premium incluye más, aquí lo cambiamos
+
+    // Coaching 1 hr (no expira “acceso a agendar”)
+    planesteborgcoach1hr:  { days: 3650, modulesAllowed: ["coach1hr"] },
+
+    // Master = tu sección de prueba (NO se vende)
+    esteborgmaster:        { days: 3650, modulesAllowed: ["comunica","ventas","iavipcom","erpev"] },
   };
 
   return plans[planKey] || null;
 }
+
