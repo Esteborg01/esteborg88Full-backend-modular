@@ -27,15 +27,14 @@ router.post("/auth/register", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(String(password), 12);
 
-    const safePlan = plan === "ia90" ? "ia90" : "vip30";
-    const days = getVipDurationDays(safePlan);
-    const vipExpiresAt = addDays(new Date(), days);
+    const safePlan = "none";
+    const vipExpiresAt = null;
 
     const userDoc = {
       email: normalizedEmail,
       passwordHash,
       plan: safePlan,
-      modulesAllowed: Array.isArray(modulesAllowed) ? modulesAllowed : [],
+      modulesAllowed: [],
       vipExpiresAt,
       status: "active",
       createdAt: new Date(),
