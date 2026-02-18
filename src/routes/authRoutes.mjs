@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getDb } from "../config/mongoClient.mjs";
 import { addDays, getVipDurationDays } from "../core/vipRules.mjs";
+import { requireAuth } from "../middleware/requireAuth.mjs";
 
 const router = express.Router();
 
@@ -115,6 +116,57 @@ router.post("/auth/login", async (req, res) => {
     console.error("login error:", err);
     return res.status(500).json({ ok: false, error: "internal_error" });
   }
+  
+  router.get("/auth/me", requireAuth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const users = db.collection("users");
+
+    const email = String(req.user?.email || "").toLowerCase().trim();
+    const user = await users.findOne({ email });
+
+    if (!user) return res.status(404).json({ ok: false, error: "user_not_found" });
+
+    return res.json({
+      ok: true,
+      user: {
+        email: user.email,
+        plan: user.plan,
+        modulesAllowed: user.modulesAllowed || [],
+        vipExpiresAt: user.vipExpiresAt,
+        status: user.status,
+      },
+    });
+  } catch (err) {
+    console.error("auth/me error:", err);
+    return res.status(500).json({ ok: false, error: "internal_error" });
+  }
+
+  router.get("/auth/me", requireAuth, async (req, res) => {
+    try {
+    const db = await getDb();
+    const users = db.collection("users");
+
+    const email = String(req.user?.email || "").toLowerCase().trim();
+    const user = await users.findOne({ email });
+
+    if (!user) return res.status(404).json({ ok: false, error: "user_not_found" });
+
+    return res.json({
+      ok: true,
+      user: {
+        email: user.email,
+        plan: user.plan,
+        modulesAllowed: user.modulesAllowed || [],
+        vipExpiresAt: user.vipExpiresAt,
+        status: user.status,
+      },
+    });
+  } catch (err) {
+    console.error("auth/me error:", err);
+    return res.status(500).json({ ok: false, error: "internal_error" });
+  }
 });
+
 
 export default router;
