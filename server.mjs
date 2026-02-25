@@ -42,6 +42,7 @@ app.use(compressHistoryMiddleware);
 // 4) Rutas base
 app.use("/api", healthRoutes);
 app.use("/api", authRoutes);
+app.use("/api", billingRoutes);
 
 // Root health
 app.get("/", (req, res) => {
