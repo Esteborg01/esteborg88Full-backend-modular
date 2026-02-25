@@ -23,6 +23,9 @@ import { registerIaVipComRoutes } from "./src/modules/iavipcomRoutes.mjs";
 import healthRoutes from "./src/routes/healthRoutes.mjs";
 import authRoutes from "./src/routes/authRoutes.mjs";
 
+// ✅ NUEVO: Billing (Stripe)
+import billingRoutes from "./src/routes/billingRoutes.mjs";
+
 dotenv.config();
 
 const app = express();
@@ -30,7 +33,7 @@ const app = express();
 // 1) CORS primero
 app.use(cors());
 
-// 2) Body parsers ANTES de cualquier ruta (para que req.body NO sea undefined)
+// 2) Body parsers ANTES de cualquier ruta
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -42,6 +45,8 @@ app.use(compressHistoryMiddleware);
 // 4) Rutas base
 app.use("/api", healthRoutes);
 app.use("/api", authRoutes);
+
+// ✅ Monta billing ANTES del 404
 app.use("/api", billingRoutes);
 
 // Root health
@@ -58,18 +63,18 @@ registerDemoRoutes(app, openai);
 registerTokkenRoutes(app, openai);
 registerIaVipComRoutes(app, openai);
 
-// 6) Fallback 404 (si no encontró ruta)
+// 6) Fallback 404
 app.use((req, res) => {
   res.status(404).json({ error: "not_found", path: req.path });
 });
 
-// 7) Error handler (último)
+// 7) Error handler
 app.use((err, req, res, next) => {
   console.error("❌ Unhandled error:", err);
   res.status(500).json({ error: "internal_error" });
 });
 
-// 8) LISTEN (UNA SOLA VEZ, AL FINAL)
+// 8) LISTEN
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
