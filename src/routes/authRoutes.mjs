@@ -162,9 +162,14 @@ router.get("/auth/me", async (req, res) => {
 router.post("/auth/forgot", async (req, res) => {
   try {
     const { email } = req.body || {};
-    if (!email) return res.status(400).json({ ok: false, error: "email_required" });
+    if (!email) {
+      return res.status(400).json({ ok: false, error: "email_required" });
+    }
 
     if (!requireJwtSecret(res)) return;
+
+    // 🔒 Pequeño delay anti-ataque
+    await new Promise(r => setTimeout(r, 500));
 
     const db = await getDb();
     const users = db.collection("users");
@@ -172,7 +177,7 @@ router.post("/auth/forgot", async (req, res) => {
     const normalizedEmail = String(email).toLowerCase().trim();
     const user = await users.findOne({ email: normalizedEmail });
 
-    // Seguridad: siempre respondemos ok:true
+    // Seguridad: siempre respondemos ok:true aunque no exista
     if (!user) return res.json({ ok: true });
 
     const resetToken = jwt.sign(
@@ -209,12 +214,12 @@ router.post("/auth/forgot", async (req, res) => {
     });
 
     return res.json({ ok: true });
+
   } catch (err) {
     console.error("forgot error:", err);
     return res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
-
 /* =====================================================
    RESET PASSWORD
 ===================================================== */
