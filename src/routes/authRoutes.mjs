@@ -158,87 +158,81 @@ router.get("/auth/me", async (req, res) => {
 /* =========================
    FORGOT  ✅ PARCHE RESEND
 ========================= */
+// POST /api/auth/forgot
 router.post("/auth/forgot", async (req, res) => {
-  const startedAt = Date.now();
-  const reqId = Math.random().toString(16).slice(2, 10);
-
   try {
     const { email } = req.body || {};
-    if (!email) return res.status(400).json({ ok: false, error: "email_required" });
-    if (!ensureJwt(res)) return;
+
+    if (!email) {
+      return res.status(422).json({ ok: false, error: "email_required" });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ ok: false, error: "jwt_missing" });
+    }
 
     const normalizedEmail = String(email).toLowerCase().trim();
 
-    // ✅ Log útil (sin filtrar datos peligrosos)
-    console.log(`[FORGOT ${reqId}] requested for:`, safeEmail(normalizedEmail));
-    console.log(`[FORGOT ${reqId}] ENV has RESEND_API_KEY:`, !!process.env.RESEND_API_KEY);
-    console.log(`[FORGOT ${reqId}] ENV EMAIL_FROM:`, process.env.EMAIL_FROM || "(missing)");
+    console.log("[FORGOT] Request for:", normalizedEmail);
 
-    // “Siempre ok” para no filtrar existencia de cuentas
-    // pero primero revisamos si el user existe (si no, terminamos)
     const db = await getDb();
     const users = db.collection("users");
+
     const user = await users.findOne({ email: normalizedEmail });
 
+    // Siempre respondemos ok para no filtrar usuarios
     if (!user) {
-      console.log(`[FORGOT ${reqId}] user not found (return ok).`);
+      console.log("[FORGOT] User not found (silent ok)");
       return res.json({ ok: true });
     }
 
-    // Si no está configurado Resend, no tronamos
-    if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
-      console.warn(`[FORGOT ${reqId}] resend/email_from missing -> return ok`);
-      return res.json({ ok: true });
-    }
-
-    // Token reset 15 min
     const resetToken = jwt.sign(
       { sub: String(user._id), type: "pw_reset" },
       process.env.JWT_SECRET,
       { expiresIn: "15m" }
     );
 
-    const resetUrl = `${getPublicAppUrl()}/#reset?token=${encodeURIComponent(resetToken)}`;
+    const resetUrl = `https://membersvip.esteborg.live/#reset?token=${encodeURIComponent(resetToken)}`;
 
-    const html = `
-      <div style="font-family:Inter,Arial;padding:30px;background:#0e1016;color:#f4f1e8">
-        <h2 style="color:#d7b66a;margin:0 0 10px">Crea / recupera tu contraseña</h2>
-        <p style="opacity:.9;margin:0 0 14px">Haz clic para crear una nueva contraseña.</p>
-        <a href="${resetUrl}"
-           style="display:inline-block;padding:14px 22px;background:#d7b66a;color:#101010;
-           font-weight:800;border-radius:12px;text-decoration:none;margin-top:6px">
-           Crear nueva contraseña
-        </a>
-        <p style="margin-top:18px;font-size:12px;opacity:.7">Este link expira en 15 minutos.</p>
-      </div>
-    `;
-
-    // ✅ PARCHE: log + captura respuesta/errores reales
-    try {
-      const resp = await resend.emails.send({
-        from: process.env.EMAIL_FROM,
-        to: user.email,
-        subject: "Recupera tu acceso Esteborg VIP",
-        html,
-      });
-
-      console.log(`[FORGOT ${reqId}] RESEND response:`, resp);
-    } catch (e) {
-      const plain = toPlainErr(e);
-      console.error(`[FORGOT ${reqId}] ❌ RESEND failed:`, plain);
-
-      // 🔥 Si quieres ver el error en el front SOLO mientras debuggeas, descomenta:
-      // return res.status(500).json({ ok:false, error:"resend_failed", detail: plain });
-
-      // En prod, mejor “ok” para no dar pistas
+    if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+      console.log("[FORGOT] Resend ENV missing");
       return res.json({ ok: true });
     }
 
-    console.log(`[FORGOT ${reqId}] done in ${Date.now() - startedAt}ms`);
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+
+      const resp = await resend.emails.send({
+        from: process.env.EMAIL_FROM,
+        to: normalizedEmail,
+        subject: "Recupera tu acceso Esteborg VIP",
+        html: `
+          <div style="font-family:Arial;padding:30px;background:#0e1016;color:#fff">
+            <h2 style="color:#d7b66a">Recupera tu contraseña</h2>
+            <p>Haz clic en el botón para crear una nueva contraseña:</p>
+            <a href="${resetUrl}" 
+               style="display:inline-block;padding:14px 20px;background:#d7b66a;
+               color:#111;font-weight:bold;border-radius:8px;text-decoration:none;">
+               Crear nueva contraseña
+            </a>
+            <p style="margin-top:20px;font-size:12px;opacity:.7">
+              Este enlace expira en 15 minutos.
+            </p>
+          </div>
+        `
+      });
+
+      console.log("[FORGOT] Resend response:", resp);
+
+    } catch (e) {
+      console.error("[FORGOT] Resend error:", e);
+    }
+
     return res.json({ ok: true });
+
   } catch (err) {
-    console.error(`[FORGOT] ❌ internal error:`, toPlainErr(err));
-    return res.status(500).json({ ok: false, error: "internal_error" });
+    console.error("[FORGOT] Internal error:", err);
+    return res.status(500).json({ ok: false });
   }
 });
 
