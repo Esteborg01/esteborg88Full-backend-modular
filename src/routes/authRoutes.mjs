@@ -63,6 +63,7 @@ router.post("/auth/register", async (req, res) => {
       modulesAllowed: Array.isArray(modulesAllowed) ? modulesAllowed : [],
       vipExpiresAt,
       status: "active",
+      tokenVersion: 1, // 🔥 control de revocación
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -104,6 +105,7 @@ router.post("/auth/login", async (req, res) => {
         sub: String(user._id),
         email: user.email,
         plan: user.plan,
+        tv: user.tokenVersion || 1,
       },
       process.env.JWT_SECRET,
       { expiresIn: "30d" }
@@ -141,6 +143,10 @@ router.get("/auth/me", async (req, res) => {
 
     if (!user) return res.status(404).json({ ok: false });
 
+    if ((payload.tv || 1) !== (user.tokenVersion || 1)) {
+      return res.status(401).json({ ok: false, error: "token_revoked" });
+    }
+
     return res.json({
       ok: true,
       user: {
@@ -156,70 +162,38 @@ router.get("/auth/me", async (req, res) => {
 });
 
 /* =====================================================
-   FORGOT PASSWORD
+   LOGOUT ALL
 ===================================================== */
 
-router.post("/auth/forgot", async (req, res) => {
+router.post("/auth/logoutAll", async (req, res) => {
   try {
-    const { email } = req.body || {};
-    if (!email) {
-      return res.status(400).json({ ok: false, error: "email_required" });
-    }
-
     if (!requireJwtSecret(res)) return;
 
-    // 🔒 Pequeño delay anti-ataque
-    await new Promise(r => setTimeout(r, 500));
+    const token = getBearerToken(req);
+    if (!token) return res.status(401).json({ ok: false });
+
+    let payload;
+    try {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ ok: false });
+    }
 
     const db = await getDb();
     const users = db.collection("users");
 
-    const normalizedEmail = String(email).toLowerCase().trim();
-    const user = await users.findOne({ email: normalizedEmail });
-
-    // Seguridad: siempre respondemos ok:true aunque no exista
-    if (!user) return res.json({ ok: true });
-
-    const resetToken = jwt.sign(
-      { sub: String(user._id), type: "pw_reset" },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+    await users.updateOne(
+      { _id: new ObjectId(String(payload.sub)) },
+      { $inc: { tokenVersion: 1 }, $set: { updatedAt: new Date() } }
     );
 
-    const baseUrl =
-      process.env.PUBLIC_APP_URL || "https://membersvip.esteborg.live";
-
-    const resetUrl = `${baseUrl}/#reset?token=${encodeURIComponent(resetToken)}`;
-
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM,
-      to: user.email,
-      subject: "Recupera tu acceso Esteborg VIP",
-      html: `
-        <div style="font-family:Inter,Arial;padding:30px;background:#0e1016;color:#f4f1e8">
-          <h2 style="color:#d7b66a">Recuperación de contraseña</h2>
-          <p>Haz clic en el botón para crear una nueva contraseña.</p>
-          <a href="${resetUrl}"
-             style="display:inline-block;padding:14px 22px;
-             background:#d7b66a;color:#101010;
-             font-weight:bold;border-radius:12px;
-             text-decoration:none;margin-top:16px">
-             Resetear contraseña
-          </a>
-          <p style="margin-top:20px;font-size:12px;opacity:.7">
-             Este link expira en 15 minutos.
-          </p>
-        </div>
-      `,
-    });
-
     return res.json({ ok: true });
-
   } catch (err) {
-    console.error("forgot error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
+    console.error("logoutAll error:", err);
+    return res.status(500).json({ ok: false });
   }
 });
+
 /* =====================================================
    RESET PASSWORD
 ===================================================== */
@@ -227,24 +201,20 @@ router.post("/auth/forgot", async (req, res) => {
 router.post("/auth/reset", async (req, res) => {
   try {
     const { token, password } = req.body || {};
-
     if (!token || !password)
-      return res.status(400).json({ ok: false, error: "token_and_password_required" });
+      return res.status(400).json({ ok: false });
 
     if (String(password).length < 8)
-      return res.status(400).json({ ok: false, error: "password_too_short" });
+      return res.status(400).json({ ok: false });
 
     if (!requireJwtSecret(res)) return;
 
     let payload;
     try {
-      payload = jwt.verify(String(token), process.env.JWT_SECRET);
+      payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
-      return res.status(401).json({ ok: false, error: "invalid_or_expired_token" });
+      return res.status(401).json({ ok: false });
     }
-
-    if (payload?.type !== "pw_reset" || !payload?.sub)
-      return res.status(401).json({ ok: false, error: "invalid_token" });
 
     const db = await getDb();
     const users = db.collection("users");
@@ -253,13 +223,16 @@ router.post("/auth/reset", async (req, res) => {
 
     await users.updateOne(
       { _id: new ObjectId(String(payload.sub)) },
-      { $set: { passwordHash, updatedAt: new Date() } }
+      {
+        $set: { passwordHash, updatedAt: new Date() },
+        $inc: { tokenVersion: 1 },
+      }
     );
 
     return res.json({ ok: true });
   } catch (err) {
     console.error("reset error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
+    return res.status(500).json({ ok: false });
   }
 });
 
