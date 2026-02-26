@@ -1,3 +1,4 @@
+// src/routes/billingRoutes.mjs
 import express from "express";
 import Stripe from "stripe";
 
@@ -20,23 +21,28 @@ function getPriceMap() {
   }
 }
 
-// POST /api/billing/checkout
+/**
+ * POST /api/billing/checkout
+ * - No requiere token
+ * - Manda directo a Stripe Checkout
+ * - Metadata incluye `plan`
+ * - ✅ customer_creation: "always" para que Stripe cree Customer incluso si total=0 (cupon 100%)
+ */
 router.post("/billing/checkout", async (req, res) => {
   try {
     const { plan } = req.body || {};
     if (!plan) return res.status(400).json({ ok: false, error: "missing_plan" });
 
-    const planSlug = String(plan);
-
+    const planSlug = String(plan).trim();
     const priceMap = getPriceMap();
     const priceId = priceMap[planSlug];
+
     if (!priceId) {
       return res.status(400).json({ ok: false, error: "unknown_plan", plan: planSlug });
     }
 
     const stripe = getStripe();
 
-    // ✅ Nuevo flujo: pagas -> webhook crea/actualiza usuario -> login
     const successUrl =
       process.env.STRIPE_SUCCESS_URL || "https://membersvip.esteborg.live/#login?paid=1";
     const cancelUrl =
@@ -45,15 +51,20 @@ router.post("/billing/checkout", async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [{ price: priceId, quantity: 1 }],
+
       success_url: successUrl,
       cancel_url: cancelUrl,
 
       allow_promotion_codes: true,
 
-      // ✅ Para que el webhook sepa EXACTAMENTE qué plan compró
-      metadata: {
-        plan: planSlug,
-      },
+      // ✅ Parche: fuerza creación de Customer aunque el total sea 0.00
+      customer_creation: "always",
+
+      // opcional (no rompe): Stripe decide si pedir dirección
+      billing_address_collection: "auto",
+
+      // ✅ Para que el webhook sepa el plan exacto
+      metadata: { plan: planSlug },
     });
 
     return res.json({ ok: true, url: session.url });
@@ -62,6 +73,12 @@ router.post("/billing/checkout", async (req, res) => {
 
     if (err?.code === "stripe_secret_missing") {
       return res.status(500).json({ ok: false, error: "stripe_secret_missing" });
+    }
+
+    // Mensaje útil si Stripe rechaza algo
+    const stripeMsg = err?.raw?.message || err?.message || null;
+    if (stripeMsg) {
+      return res.status(500).json({ ok: false, error: "stripe_error", message: stripeMsg });
     }
 
     return res.status(500).json({ ok: false, error: "internal_error" });
