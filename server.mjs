@@ -22,9 +22,10 @@ import { registerIaVipComRoutes } from "./src/modules/iavipcomRoutes.mjs";
 // Rutas base
 import healthRoutes from "./src/routes/healthRoutes.mjs";
 import authRoutes from "./src/routes/authRoutes.mjs";
-
-// ✅ NUEVO: Billing (Stripe)
 import billingRoutes from "./src/routes/billingRoutes.mjs";
+
+// ✅ NUEVO: Stripe Webhook (RAW)
+import { stripeWebhookHandler } from "./src/routes/stripeWebhook.mjs";
 
 dotenv.config();
 
@@ -33,20 +34,26 @@ const app = express();
 // 1) CORS primero
 app.use(cors());
 
-// 2) Body parsers ANTES de cualquier ruta
+// ✅ 2) Stripe Webhook ANTES de express.json
+// Stripe firma el body RAW. Si pasas por express.json, se rompe la firma.
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhookHandler
+);
+
+// 3) Body parsers DESPUÉS (para el resto del API)
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// 3) Middlewares comunes
+// 4) Middlewares comunes
 app.use(rateLimiter);
 app.use(longMessageGuard);
 app.use(compressHistoryMiddleware);
 
-// 4) Rutas base
+// 5) Rutas base
 app.use("/api", healthRoutes);
 app.use("/api", authRoutes);
-
-// ✅ Monta billing ANTES del 404
 app.use("/api", billingRoutes);
 
 // Root health
@@ -54,7 +61,7 @@ app.get("/", (req, res) => {
   res.send("Esteborg backend modular está vivo ✅");
 });
 
-// 5) Registrar módulos (rutas)
+// 6) Registrar módulos (rutas)
 registerEsteborgFullRoutes(app, openai);
 registerComunicaRoutes(app, openai);
 registerVentasRoutes(app, openai);
@@ -63,18 +70,18 @@ registerDemoRoutes(app, openai);
 registerTokkenRoutes(app, openai);
 registerIaVipComRoutes(app, openai);
 
-// 6) Fallback 404
+// 7) Fallback 404
 app.use((req, res) => {
   res.status(404).json({ error: "not_found", path: req.path });
 });
 
-// 7) Error handler
+// 8) Error handler
 app.use((err, req, res, next) => {
   console.error("❌ Unhandled error:", err);
   res.status(500).json({ error: "internal_error" });
 });
 
-// 8) LISTEN
+// 9) LISTEN
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
