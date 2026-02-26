@@ -1,419 +1,390 @@
+// src/routes/authRoutes.mjs
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { ObjectId } from "mongodb";
+import crypto from "crypto";
 import { Resend } from "resend";
-
-import { getDb } from "../config/mongoClient.mjs";
-import { addDays, getVipDurationDays } from "../core/vipRules.mjs";
+import { getMongoClient } from "../config/mongoClient.mjs";
 
 const router = express.Router();
-const resend = new Resend(process.env.RESEND_API_KEY);
 
-/* =====================================================
-   Helpers
-===================================================== */
+/**
+ * ENV requeridas:
+ * - JWT_SECRET
+ * - MONGO_URI
+ * - RESEND_API_KEY
+ * - EMAIL_FROM            (ej: "Esteborg <soporte@mail.esteborg.live>")
+ *
+ * Opcionales:
+ * - FRONTEND_BASE_URL     (default: https://membersvip.esteborg.live)
+ */
 
-function getBearerToken(req) {
-  const auth = req.headers.authorization || "";
-  if (!auth.startsWith("Bearer ")) return null;
-  return auth.slice(7).trim() || null;
+function frontendBase() {
+  return (process.env.FRONTEND_BASE_URL || "https://membersvip.esteborg.live").replace(/\/+$/, "");
 }
 
-function requireJwtSecret(res) {
-  if (!process.env.JWT_SECRET) {
-    res.status(500).json({ ok: false, error: "jwt_secret_missing" });
-    return false;
+function nowPlusMinutes(min) {
+  return new Date(Date.now() + min * 60 * 1000);
+}
+
+function sha256(input) {
+  return crypto.createHash("sha256").update(input).digest("hex");
+}
+
+function safeEmail(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function isExpired(vipExpiresAt) {
+  if (!vipExpiresAt) return true;
+  const d = vipExpiresAt instanceof Date ? vipExpiresAt : new Date(vipExpiresAt);
+  return Number.isNaN(d.getTime()) ? true : d.getTime() < Date.now();
+}
+
+async function sendEmail({ to, subject, html, text }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM;
+
+  if (!apiKey) {
+    console.warn("[EMAIL] RESEND_API_KEY missing. Skipping send.");
+    return { skipped: true, reason: "missing_resend_api_key" };
   }
-  return true;
-}
+  if (!from) {
+    console.warn("[EMAIL] EMAIL_FROM missing. Skipping send.");
+    return { skipped: true, reason: "missing_email_from" };
+  }
 
-function allowUnverifiedLogin() {
-  // Render ENV: ESTEBORG_ALLOW_UNVERIFIED_LOGIN = "1" para permitir acceso sin verificar
-  return String(process.env.ESTEBORG_ALLOW_UNVERIFIED_LOGIN || "0") === "1";
-}
-
-function getPublicAppUrl() {
-  return process.env.PUBLIC_APP_URL || "https://membersvip.esteborg.live";
-}
-
-async function sendVerifyEmail({ toEmail, userId }) {
-  // Si no hay Resend configurado, no truena el registro/login; solo no manda mail.
-  if (!process.env.RESEND_API_KEY) return { skipped: true, reason: "resend_missing" };
-  if (!process.env.EMAIL_FROM) return { skipped: true, reason: "email_from_missing" };
-  if (!process.env.JWT_SECRET) return { skipped: true, reason: "jwt_secret_missing" };
-
-  const verifyToken = jwt.sign(
-    { sub: String(userId), type: "verify_email" },
-    process.env.JWT_SECRET,
-    { expiresIn: "30m" }
-  );
-
-  // OJO: tú usas #reset como pantalla “token handler”
-  const verifyUrl = `${getPublicAppUrl()}/#reset?token=${encodeURIComponent(verifyToken)}`;
-
-  await resend.emails.send({
-    from: process.env.EMAIL_FROM,
-    to: toEmail,
-    subject: "Verifica tu correo - Esteborg VIP",
-    html: `
-      <div style="font-family:Inter,Arial;padding:30px;background:#0e1016;color:#f4f1e8">
-        <h2 style="color:#d7b66a;margin:0 0 10px">Verificación de correo</h2>
-        <p style="opacity:.9;margin:0 0 14px">Confirma tu correo para poder iniciar sesión.</p>
-        <a href="${verifyUrl}"
-           style="display:inline-block;padding:14px 22px;background:#d7b66a;color:#101010;
-           font-weight:800;border-radius:12px;text-decoration:none;margin-top:6px">
-           Verificar correo
-        </a>
-        <p style="margin-top:18px;font-size:12px;opacity:.7">Este link expira en 30 minutos.</p>
-      </div>
-    `,
+  const resend = new Resend(apiKey);
+  const res = await resend.emails.send({
+    from,
+    to,
+    subject,
+    html,
+    text,
   });
 
-  return { ok: true };
+  return res;
 }
 
-/* =====================================================
-   REGISTER
-===================================================== */
+function signJwt(user) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET is missing");
 
-router.post("/auth/register", async (req, res) => {
-  try {
-    const { email, password, plan, modulesAllowed } = req.body || {};
+  const payload = {
+    sub: String(user._id),
+    email: user.email,
+    plan: user.plan || null,
+    modulesAllowed: Array.isArray(user.modulesAllowed) ? user.modulesAllowed : [],
+    vipExpiresAt: user.vipExpiresAt || null,
+    status: user.status || "active",
+  };
 
-    if (!email || !password) {
-      return res.status(400).json({ ok: false, error: "email_and_password_required" });
-    }
+  // 30 días de validez del JWT; el “acceso real” lo manda vipExpiresAt en el front
+  return jwt.sign(payload, secret, { expiresIn: "30d" });
+}
 
-    const db = await getDb();
-    const users = db.collection("users");
-
-    const normalizedEmail = String(email).toLowerCase().trim();
-
-    const existing = await users.findOne({ email: normalizedEmail });
-    if (existing) {
-      return res.status(409).json({ ok: false, error: "email_already_exists" });
-    }
-
-    const passwordHash = await bcrypt.hash(String(password), 12);
-
-    const safePlan =
-      plan === "planesteborgiaexperto" ||
-      plan === "planesteborg30diascom" ||
-      plan === "planesteborg30diasvts" ||
-      plan === "evaluatuerp" ||
-      plan === "planesteborg30diasbund" ||
-      plan === "vippremium" ||
-      plan === "esteborgmaster" ||
-      plan === "planesteborgcoach1hr"
-        ? plan
-        : "free";
-
-    let vipExpiresAt = null;
-    if (safePlan !== "free") {
-      const days = getVipDurationDays(safePlan);
-      vipExpiresAt = addDays(new Date(), days);
-    }
-
-    const now = new Date();
-
-    const ins = await users.insertOne({
-      email: normalizedEmail,
-      passwordHash,
-      plan: safePlan,
-      modulesAllowed: Array.isArray(modulesAllowed) ? modulesAllowed : [],
-      vipExpiresAt,
-      status: "active",
-      emailVerified: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    try {
-      await sendVerifyEmail({ toEmail: normalizedEmail, userId: ins.insertedId });
-    } catch (e) {
-      console.warn("sendVerifyEmail(register) failed:", e?.message || e);
-    }
-
-    return res.status(201).json({ ok: true });
-  } catch (err) {
-    console.error("register error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
-  }
-});
-
-/* =====================================================
-   LOGIN
-===================================================== */
-
+/**
+ * POST /api/auth/login
+ * body: { email, password }
+ */
 router.post("/auth/login", async (req, res) => {
   try {
-    const { email, password } = req.body || {};
+    const email = safeEmail(req.body?.email);
+    const password = String(req.body?.password || "");
 
     if (!email || !password) {
-      return res.status(400).json({ ok: false, error: "email_and_password_required" });
+      return res.status(400).json({ ok: false, error: "missing_email_or_password" });
     }
 
-    if (!requireJwtSecret(res)) return;
-
-    const db = await getDb();
+    const client = await getMongoClient();
+    const db = client.db();
     const users = db.collection("users");
 
-    const normalizedEmail = String(email).toLowerCase().trim();
-    const user = await users.findOne({ email: normalizedEmail });
+    const user = await users.findOne({ email });
 
-    if (!user) return res.status(401).json({ ok: false, error: "invalid_credentials" });
-
-    // ✅ PARCHE: usuarios creados por webhook pueden venir con passwordHash:null
-    if (!user.passwordHash) {
-      return res.status(403).json({ ok: false, error: "password_not_set" });
-    }
-
-    let okPass = false;
-    try {
-      okPass = await bcrypt.compare(String(password), String(user.passwordHash));
-    } catch (e) {
-      console.warn("bcrypt.compare failed:", e?.message || e);
+    // Respuesta genérica para no filtrar existencia
+    if (!user) {
       return res.status(401).json({ ok: false, error: "invalid_credentials" });
     }
 
-    if (!okPass) return res.status(401).json({ ok: false, error: "invalid_credentials" });
-
-    // ✅ Candado Netflix
-    if (!allowUnverifiedLogin() && user.emailVerified === false) {
-      return res.status(403).json({ ok: false, error: "email_not_verified" });
+    // Si el usuario lo creó Stripe y todavía no tiene password
+    if (!user.passwordHash) {
+      return res.status(409).json({
+        ok: false,
+        error: "password_not_set",
+        message: "Tu cuenta existe pero aún no tiene password. Usa 'Olvidé mi password' para crearlo.",
+      });
     }
 
-    const token = jwt.sign(
-      {
-        sub: String(user._id),
-        email: user.email,
-        plan: user.plan,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "30d" }
-    );
-
-    return res.json({ ok: true, token });
-  } catch (err) {
-    console.error("login error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
-  }
-});
-
-/* =====================================================
-   ME
-===================================================== */
-
-router.get("/auth/me", async (req, res) => {
-  try {
-    if (!requireJwtSecret(res)) return;
-
-    const token = getBearerToken(req);
-    if (!token) return res.status(401).json({ ok: false });
-
-    let payload;
-    try {
-      payload = jwt.verify(token, process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ ok: false });
+    // Si quieres forzar verificación, deja esto. Si NO, comenta este bloque.
+    if (user.emailVerified === false) {
+      return res.status(403).json({
+        ok: false,
+        error: "email_not_verified",
+        message: "Tu correo no está verificado. Revisa tu email para confirmar.",
+      });
     }
 
-    const db = await getDb();
-    const user = await db.collection("users").findOne({
-      _id: new ObjectId(String(payload.sub)),
-    });
+    if (user.status && user.status !== "active") {
+      return res.status(403).json({ ok: false, error: "inactive_user" });
+    }
 
-    if (!user) return res.status(404).json({ ok: false });
+    // VIP expirado -> sin acceso
+    if (isExpired(user.vipExpiresAt)) {
+      return res.status(403).json({
+        ok: false,
+        error: "vip_expired",
+        message: "Tu acceso expiró. Compra/renueva tu plan para volver a entrar.",
+        vipExpiresAt: user.vipExpiresAt || null,
+      });
+    }
+
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) {
+      return res.status(401).json({ ok: false, error: "invalid_credentials" });
+    }
+
+    const token = signJwt(user);
 
     return res.json({
       ok: true,
+      token,
       user: {
         email: user.email,
-        plan: user.plan,
-        vipExpiresAt: user.vipExpiresAt,
-        emailVerified: user.emailVerified === true,
+        plan: user.plan || null,
+        modulesAllowed: user.modulesAllowed || [],
+        vipExpiresAt: user.vipExpiresAt || null,
+        status: user.status || "active",
+        emailVerified: user.emailVerified !== false,
       },
     });
   } catch (err) {
-    console.error("me error:", err);
-    return res.status(500).json({ ok: false });
+    console.error("[LOGIN] error:", err);
+    return res.status(500).json({ ok: false, error: "server_error" });
   }
 });
 
-/* =====================================================
-   FORGOT PASSWORD
-===================================================== */
-
+/**
+ * POST /api/auth/forgot
+ * body: { email }
+ * Siempre responde 200 para evitar enumeración.
+ */
 router.post("/auth/forgot", async (req, res) => {
   try {
-    const { email } = req.body || {};
-    if (!email) return res.status(400).json({ ok: false, error: "email_required" });
+    const email = safeEmail(req.body?.email);
+    console.log("[FORGOT] Request for:", email);
 
-    if (!requireJwtSecret(res)) return;
-
-    await new Promise((r) => setTimeout(r, 500));
-
-    const db = await getDb();
-    const users = db.collection("users");
-
-    const normalizedEmail = String(email).toLowerCase().trim();
-    const user = await users.findOne({ email: normalizedEmail });
-
-    if (!user) return res.json({ ok: true });
-
-    if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
-      console.warn("forgot: resend/email_from missing");
-      return res.json({ ok: true });
+    if (!email) {
+      return res.status(200).json({ ok: true, message: "Si existe tu cuenta, te mandamos un link." });
     }
 
-    const resetToken = jwt.sign(
-      { sub: String(user._id), type: "pw_reset" },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+    const client = await getMongoClient();
+    const db = client.db();
+    const users = db.collection("users");
+
+    const user = await users.findOne({ email });
+
+    // Siempre 200, aunque no exista
+    if (!user) {
+      return res.status(200).json({ ok: true, message: "Si existe tu cuenta, te mandamos un link." });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = sha256(rawToken);
+
+    await users.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          resetTokenHash: tokenHash,
+          resetTokenExpiresAt: nowPlusMinutes(30), // 30 min
+          updatedAt: new Date(),
+        },
+      }
     );
 
-    const resetUrl = `${getPublicAppUrl()}/#reset?token=${encodeURIComponent(resetToken)}`;
+    const resetUrl = `${frontendBase()}/#reset?token=${rawToken}`;
 
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM,
-      to: user.email,
-      subject: "Recupera tu acceso Esteborg VIP",
-      html: `
-        <div style="font-family:Inter,Arial;padding:30px;background:#0e1016;color:#f4f1e8">
-          <h2 style="color:#d7b66a;margin:0 0 10px">Recuperación de contraseña</h2>
-          <p style="opacity:.9;margin:0 0 14px">Haz clic para crear una nueva contraseña.</p>
-          <a href="${resetUrl}"
-             style="display:inline-block;padding:14px 22px;background:#d7b66a;color:#101010;
-             font-weight:800;border-radius:12px;text-decoration:none;margin-top:6px">
-             Resetear contraseña
-          </a>
-          <p style="margin-top:18px;font-size:12px;opacity:.7">Este link expira en 15 minutos.</p>
-        </div>
-      `,
-    });
+    const subject = "Esteborg • Recuperación de acceso";
+    const html = `
+      <div style="font-family:Arial,sans-serif;line-height:1.5">
+        <h2>Recuperación de acceso</h2>
+        <p>Alguien pidió resetear tu password.</p>
+        <p><a href="${resetUrl}">Crea tu nuevo password aquí</a></p>
+        <p style="color:#666;font-size:12px">Este link expira en 30 minutos.</p>
+      </div>
+    `;
+    const text = `Recuperación de acceso: ${resetUrl} (expira en 30 minutos)`;
 
-    return res.json({ ok: true });
+    const resendResp = await sendEmail({ to: email, subject, html, text });
+    console.log("[FORGOT] Resend response:", resendResp);
+
+    return res.status(200).json({ ok: true, message: "Si existe tu cuenta, te mandamos un link." });
   } catch (err) {
-    console.error("forgot error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
+    console.error("[FORGOT] error:", err);
+    // Aún así regresamos 200 para no filtrar ni romper UX
+    return res.status(200).json({ ok: true, message: "Si existe tu cuenta, te mandamos un link." });
   }
 });
 
-/* =====================================================
-   RESET PASSWORD
-===================================================== */
-
+/**
+ * POST /api/auth/reset
+ * body: { token, newPassword }
+ */
 router.post("/auth/reset", async (req, res) => {
   try {
-    const { token, password } = req.body || {};
+    const token = String(req.body?.token || "").trim();
+    const newPassword = String(req.body?.newPassword || "");
 
-    if (!token || !password) {
-      return res.status(400).json({ ok: false, error: "token_and_password_required" });
+    if (!token || newPassword.length < 8) {
+      return res.status(400).json({ ok: false, error: "invalid_payload" });
     }
 
-    if (String(password).length < 8) {
-      return res.status(400).json({ ok: false, error: "password_too_short" });
-    }
-
-    if (!requireJwtSecret(res)) return;
-
-    let payload;
-    try {
-      payload = jwt.verify(String(token), process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ ok: false, error: "invalid_or_expired_token" });
-    }
-
-    if (payload?.type !== "pw_reset" || !payload?.sub) {
-      return res.status(401).json({ ok: false, error: "invalid_token" });
-    }
-
-    const db = await getDb();
+    const client = await getMongoClient();
+    const db = client.db();
     const users = db.collection("users");
 
-    const passwordHash = await bcrypt.hash(String(password), 12);
+    const tokenHash = sha256(token);
 
-    // ✅ PARCHE: reset también “verifica” email (si recibió el mail, ya se validó)
+    const user = await users.findOne({
+      resetTokenHash: tokenHash,
+      resetTokenExpiresAt: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ ok: false, error: "invalid_or_expired_token" });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
     await users.updateOne(
-      { _id: new ObjectId(String(payload.sub)) },
-      { $set: { passwordHash, emailVerified: true, updatedAt: new Date() } }
+      { _id: user._id },
+      {
+        $set: {
+          passwordHash,
+          // ya que pudo cambiar password, lo consideramos verificado (opcional)
+          emailVerified: user.emailVerified !== false ? user.emailVerified : true,
+          status: user.status || "active",
+          updatedAt: new Date(),
+        },
+        $unset: {
+          resetTokenHash: "",
+          resetTokenExpiresAt: "",
+        },
+      }
     );
 
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error("reset error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
-  }
-});
-
-/* =====================================================
-   RESEND VERIFY
-===================================================== */
-
-router.post("/auth/resend-verify", async (req, res) => {
-  try {
-    const { email } = req.body || {};
-    if (!email) return res.status(400).json({ ok: false, error: "email_required" });
-    if (!requireJwtSecret(res)) return;
-
-    await new Promise((r) => setTimeout(r, 400));
-
-    const db = await getDb();
-    const users = db.collection("users");
-    const normalizedEmail = String(email).toLowerCase().trim();
-
-    const user = await users.findOne({ email: normalizedEmail });
-    if (!user) return res.json({ ok: true });
-
-    if (user.emailVerified === true) return res.json({ ok: true });
-
+    // Email de confirmación (best effort: si falla NO rompe reset)
     try {
-      await sendVerifyEmail({ toEmail: user.email, userId: user._id });
+      const subject = "Esteborg • Password cambiado";
+      const html = `
+        <div style="font-family:Arial,sans-serif;line-height:1.5">
+          <h2>Password actualizado ✅</h2>
+          <p>Tu contraseña se cambió correctamente.</p>
+          <p>Si tú NO hiciste este cambio, contáctanos de inmediato.</p>
+        </div>
+      `;
+      const text = "Tu contraseña se cambió correctamente. Si tú NO hiciste este cambio, contáctanos de inmediato.";
+      const resp = await sendEmail({ to: user.email, subject, html, text });
+      console.log("[RESET] confirmation email:", resp);
     } catch (e) {
-      console.warn("sendVerifyEmail(resend) failed:", e?.message || e);
+      console.warn("[RESET] confirmation email failed:", e?.message || e);
     }
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, message: "Password actualizado. Ya puedes iniciar sesión." });
   } catch (err) {
-    console.error("resend-verify error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
+    console.error("[RESET] error:", err);
+    return res.status(500).json({ ok: false, error: "server_error" });
   }
 });
 
-/* =====================================================
-   VERIFY EMAIL
-===================================================== */
-
-router.post("/auth/verify", async (req, res) => {
+/**
+ * POST /api/auth/send-verify
+ * body: { email }
+ * Manda correo para verificar email (opcional).
+ */
+router.post("/auth/send-verify", async (req, res) => {
   try {
-    const { token } = req.body || {};
-    if (!token) return res.status(400).json({ ok: false, error: "token_required" });
-    if (!requireJwtSecret(res)) return;
+    const email = safeEmail(req.body?.email);
+    if (!email) return res.status(400).json({ ok: false, error: "missing_email" });
 
-    let payload;
-    try {
-      payload = jwt.verify(String(token), process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ ok: false, error: "invalid_or_expired_token" });
-    }
-
-    if (payload?.type !== "verify_email" || !payload?.sub) {
-      return res.status(401).json({ ok: false, error: "invalid_token" });
-    }
-
-    const db = await getDb();
+    const client = await getMongoClient();
+    const db = client.db();
     const users = db.collection("users");
 
+    const user = await users.findOne({ email });
+    if (!user) return res.status(200).json({ ok: true });
+
+    const rawToken = crypto.randomBytes(24).toString("hex");
+    const verifyHash = sha256(rawToken);
+
     await users.updateOne(
-      { _id: new ObjectId(String(payload.sub)) },
-      { $set: { emailVerified: true, updatedAt: new Date() } }
+      { _id: user._id },
+      {
+        $set: {
+          verifyTokenHash: verifyHash,
+          verifyTokenExpiresAt: nowPlusMinutes(60),
+          updatedAt: new Date(),
+        },
+      }
     );
+
+    const verifyUrl = `${frontendBase()}/#verify?token=${rawToken}`;
+
+    const subject = "Esteborg • Verifica tu correo";
+    const html = `
+      <div style="font-family:Arial,sans-serif;line-height:1.5">
+        <h2>Verificación de correo</h2>
+        <p>Confirma tu email aquí:</p>
+        <p><a href="${verifyUrl}">Verificar mi correo</a></p>
+        <p style="color:#666;font-size:12px">Este link expira en 60 minutos.</p>
+      </div>
+    `;
+    const text = `Verifica tu correo: ${verifyUrl} (expira en 60 minutos)`;
+
+    const resp = await sendEmail({ to: email, subject, html, text });
+    console.log("[VERIFY] email resp:", resp);
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error("verify error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
+    console.error("[SEND-VERIFY] error:", err);
+    return res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
+/**
+ * GET /api/auth/verify-email?token=...
+ */
+router.get("/auth/verify-email", async (req, res) => {
+  try {
+    const token = String(req.query?.token || "").trim();
+    if (!token) return res.status(400).json({ ok: false, error: "missing_token" });
+
+    const client = await getMongoClient();
+    const db = client.db();
+    const users = db.collection("users");
+
+    const tokenHash = sha256(token);
+
+    const user = await users.findOne({
+      verifyTokenHash: tokenHash,
+      verifyTokenExpiresAt: { $gt: new Date() },
+    });
+
+    if (!user) return res.status(400).json({ ok: false, error: "invalid_or_expired_token" });
+
+    await users.updateOne(
+      { _id: user._id },
+      {
+        $set: { emailVerified: true, updatedAt: new Date() },
+        $unset: { verifyTokenHash: "", verifyTokenExpiresAt: "" },
+      }
+    );
+
+    return res.json({ ok: true, message: "Correo verificado. Ya puedes iniciar sesión." });
+  } catch (err) {
+    console.error("[VERIFY-EMAIL] error:", err);
+    return res.status(500).json({ ok: false, error: "server_error" });
   }
 });
 
