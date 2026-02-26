@@ -201,6 +201,10 @@ router.post("/auth/resend-verify", async (req, res) => {
 
     // Si ya está verificado, igual ok
     if (user.emailVerified) return res.json({ ok: true });
+    
+     if (user.emailVerified === false) {
+  return res.status(403).json({ ok:false, error:"email_not_verified" });
+}
 
     const verifyToken = jwt.sign(
       { sub: String(user._id), type: "email_verify" },
