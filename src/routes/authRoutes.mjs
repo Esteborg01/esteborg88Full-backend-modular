@@ -5,7 +5,6 @@ import { ObjectId } from "mongodb";
 import { Resend } from "resend";
 
 import { getDb } from "../config/mongoClient.mjs";
-import { addDays, getVipDurationDays } from "../core/vipRules.mjs";
 
 const router = express.Router();
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -28,17 +27,11 @@ function requireJwtSecret(res) {
   return true;
 }
 
-function allowUnverifiedLogin() {
-  // Render ENV: ESTEBORG_ALLOW_UNVERIFIED_LOGIN = "1" para permitir acceso sin verificar
-  return String(process.env.ESTEBORG_ALLOW_UNVERIFIED_LOGIN || "0") === "1";
-}
-
 function getPublicAppUrl() {
   return process.env.PUBLIC_APP_URL || "https://membersvip.esteborg.live";
 }
 
 async function sendVerifyEmail({ toEmail, userId }) {
-  // Si no hay Resend configurado, no truena el registro/login; solo no manda mail.
   if (!process.env.RESEND_API_KEY) return { skipped: true, reason: "resend_missing" };
   if (!process.env.EMAIL_FROM) return { skipped: true, reason: "email_from_missing" };
   if (!process.env.JWT_SECRET) return { skipped: true, reason: "jwt_secret_missing" };
@@ -73,75 +66,15 @@ async function sendVerifyEmail({ toEmail, userId }) {
 }
 
 /* =====================================================
-   REGISTER
+   REGISTER (DESACTIVADO)
 ===================================================== */
 
 router.post("/auth/register", async (req, res) => {
-  try {
-    const { email, password, plan, modulesAllowed } = req.body || {};
-
-    if (!email || !password) {
-      return res.status(400).json({ ok: false, error: "email_and_password_required" });
-    }
-
-    const db = await getDb();
-    const users = db.collection("users");
-
-    const normalizedEmail = String(email).toLowerCase().trim();
-
-    const existing = await users.findOne({ email: normalizedEmail });
-    if (existing) {
-      return res.status(409).json({ ok: false, error: "email_already_exists" });
-    }
-
-    const passwordHash = await bcrypt.hash(String(password), 12);
-
-    // ✅ IMPORTANTE: no activar VIP gratis. Si no viene plan válido, dejamos "free"
-    const safePlan =
-      plan === "planesteborgiaexperto" ||
-      plan === "planesteborg30diascom" ||
-      plan === "planesteborg30diasvts" ||
-      plan === "evaluatuerp" ||
-      plan === "planesteborg30diasbund" ||
-      plan === "vippremium" ||
-      plan === "esteborgmaster" ||
-      plan === "planesteborgcoach1hr"
-        ? plan
-        : "free";
-
-    // Para free, no hay vipExpiresAt real. (si quieres, pon null)
-    let vipExpiresAt = null;
-    if (safePlan !== "free") {
-      const days = getVipDurationDays(safePlan);
-      vipExpiresAt = addDays(new Date(), days);
-    }
-
-    const now = new Date();
-
-    const ins = await users.insertOne({
-      email: normalizedEmail,
-      passwordHash,
-      plan: safePlan,
-      modulesAllowed: Array.isArray(modulesAllowed) ? modulesAllowed : [],
-      vipExpiresAt,
-      status: "active",
-      emailVerified: false, // ✅ candado
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Enviamos verificación (no bloquea si falla)
-    try {
-      await sendVerifyEmail({ toEmail: normalizedEmail, userId: ins.insertedId });
-    } catch (e) {
-      console.warn("sendVerifyEmail(register) failed:", e?.message || e);
-    }
-
-    return res.status(201).json({ ok: true });
-  } catch (err) {
-    console.error("register error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
-  }
+  return res.status(403).json({
+    ok: false,
+    error: "registration_disabled",
+    message: "No hay registro público. El acceso se activa con tu compra.",
+  });
 });
 
 /* =====================================================
@@ -166,20 +99,26 @@ router.post("/auth/login", async (req, res) => {
 
     if (!user) return res.status(401).json({ ok: false, error: "invalid_credentials" });
 
+    // ✅ Si el usuario fue creado por Stripe y no tiene password aún:
+    if (!user.passwordHash) {
+      return res.status(403).json({
+        ok: false,
+        error: "password_not_set",
+        message: "Tu acceso fue activado por compra. Crea tu password en “¿Olvidaste tu password?”",
+      });
+    }
+
     const okPass = await bcrypt.compare(String(password), user.passwordHash);
     if (!okPass) return res.status(401).json({ ok: false, error: "invalid_credentials" });
 
-    // ✅ Candado Netflix
-    if (!allowUnverifiedLogin() && user.emailVerified === false) {
+    // Si quieres mantener verify email como extra, déjalo.
+    // Para el flujo Stripe normalmente lo ponemos en true desde webhook.
+    if (user.emailVerified === false) {
       return res.status(403).json({ ok: false, error: "email_not_verified" });
     }
 
     const token = jwt.sign(
-      {
-        sub: String(user._id),
-        email: user.email,
-        plan: user.plan,
-      },
+      { sub: String(user._id), email: user.email, plan: user.plan },
       process.env.JWT_SECRET,
       { expiresIn: "30d" }
     );
@@ -192,7 +131,7 @@ router.post("/auth/login", async (req, res) => {
 });
 
 /* =====================================================
-   ME
+   ME  ✅ ahora incluye modulesAllowed
 ===================================================== */
 
 router.get("/auth/me", async (req, res) => {
@@ -222,7 +161,9 @@ router.get("/auth/me", async (req, res) => {
         email: user.email,
         plan: user.plan,
         vipExpiresAt: user.vipExpiresAt,
+        modulesAllowed: Array.isArray(user.modulesAllowed) ? user.modulesAllowed : [],
         emailVerified: user.emailVerified === true,
+        status: user.status || "active",
       },
     });
   } catch (err) {
@@ -239,10 +180,8 @@ router.post("/auth/forgot", async (req, res) => {
   try {
     const { email } = req.body || {};
     if (!email) return res.status(400).json({ ok: false, error: "email_required" });
-
     if (!requireJwtSecret(res)) return;
 
-    // 🔒 Pequeño delay anti-ataque
     await new Promise((r) => setTimeout(r, 500));
 
     const db = await getDb();
@@ -251,7 +190,6 @@ router.post("/auth/forgot", async (req, res) => {
     const normalizedEmail = String(email).toLowerCase().trim();
     const user = await users.findOne({ email: normalizedEmail });
 
-    // Seguridad: siempre respondemos ok:true aunque no exista
     if (!user) return res.json({ ok: true });
 
     if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
@@ -273,12 +211,12 @@ router.post("/auth/forgot", async (req, res) => {
       subject: "Recupera tu acceso Esteborg VIP",
       html: `
         <div style="font-family:Inter,Arial;padding:30px;background:#0e1016;color:#f4f1e8">
-          <h2 style="color:#d7b66a;margin:0 0 10px">Recuperación de contraseña</h2>
+          <h2 style="color:#d7b66a;margin:0 0 10px">Crea / recupera tu contraseña</h2>
           <p style="opacity:.9;margin:0 0 14px">Haz clic para crear una nueva contraseña.</p>
           <a href="${resetUrl}"
              style="display:inline-block;padding:14px 22px;background:#d7b66a;color:#101010;
              font-weight:800;border-radius:12px;text-decoration:none;margin-top:6px">
-             Resetear contraseña
+             Crear nueva contraseña
           </a>
           <p style="margin-top:18px;font-size:12px;opacity:.7">Este link expira en 15 minutos.</p>
         </div>
@@ -328,7 +266,13 @@ router.post("/auth/reset", async (req, res) => {
 
     await users.updateOne(
       { _id: new ObjectId(String(payload.sub)) },
-      { $set: { passwordHash, updatedAt: new Date() } }
+      {
+        $set: {
+          passwordHash,
+          emailVerified: true, // ✅ ya que llegó por email, listo
+          updatedAt: new Date(),
+        },
+      }
     );
 
     return res.json({ ok: true });
@@ -355,10 +299,7 @@ router.post("/auth/resend-verify", async (req, res) => {
     const normalizedEmail = String(email).toLowerCase().trim();
 
     const user = await users.findOne({ email: normalizedEmail });
-    // siempre ok por seguridad
     if (!user) return res.json({ ok: true });
-
-    // Si ya está verificado, ok
     if (user.emailVerified === true) return res.json({ ok: true });
 
     try {
