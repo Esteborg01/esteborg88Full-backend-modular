@@ -26,16 +26,19 @@ router.post("/billing/checkout", async (req, res) => {
     const { plan } = req.body || {};
     if (!plan) return res.status(400).json({ ok: false, error: "missing_plan" });
 
+    const planSlug = String(plan);
+
     const priceMap = getPriceMap();
-    const priceId = priceMap[String(plan)];
+    const priceId = priceMap[planSlug];
     if (!priceId) {
-      return res.status(400).json({ ok: false, error: "unknown_plan", plan });
+      return res.status(400).json({ ok: false, error: "unknown_plan", plan: planSlug });
     }
 
     const stripe = getStripe();
 
+    // ✅ Nuevo flujo: pagas -> webhook crea/actualiza usuario -> login
     const successUrl =
-      process.env.STRIPE_SUCCESS_URL || "https://membersvip.esteborg.live/#miembrosvip";
+      process.env.STRIPE_SUCCESS_URL || "https://membersvip.esteborg.live/#login?paid=1";
     const cancelUrl =
       process.env.STRIPE_CANCEL_URL || "https://membersvip.esteborg.live/#home";
 
@@ -45,8 +48,12 @@ router.post("/billing/checkout", async (req, res) => {
       success_url: successUrl,
       cancel_url: cancelUrl,
 
-      // ✅ Esto hace que aparezca el campo "Add promotion code" en Checkout
       allow_promotion_codes: true,
+
+      // ✅ Para que el webhook sepa EXACTAMENTE qué plan compró
+      metadata: {
+        plan: planSlug,
+      },
     });
 
     return res.json({ ok: true, url: session.url });
