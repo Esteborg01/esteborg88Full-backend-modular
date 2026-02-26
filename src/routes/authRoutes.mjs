@@ -7,37 +7,35 @@ import { addDays, getVipDurationDays } from "../core/vipRules.mjs";
 
 const router = express.Router();
 
-/**
- * Helper: extrae Bearer token del header Authorization
- */
+/* =====================================================
+   Helpers
+===================================================== */
+
 function getBearerToken(req) {
   const auth = req.headers.authorization || "";
   if (!auth.startsWith("Bearer ")) return null;
-  const token = auth.slice(7).trim();
-  return token ? token : null;
+  return auth.slice(7).trim() || null;
 }
 
-/**
- * Helper: valida JWT y regresa payload
- */
-function verifyJwt(token) {
+function requireJwtSecret(res) {
   if (!process.env.JWT_SECRET) {
-    const e = new Error("jwt_secret_missing");
-    e.code = "jwt_secret_missing";
-    throw e;
+    res.status(500).json({ ok: false, error: "jwt_secret_missing" });
+    return false;
   }
-  return jwt.verify(token, process.env.JWT_SECRET);
+  return true;
 }
 
-// ✅ REGISTER
+/* =====================================================
+   REGISTER
+   POST /api/auth/register
+===================================================== */
+
 router.post("/auth/register", async (req, res) => {
   try {
     const { email, password, plan, modulesAllowed } = req.body || {};
 
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ ok: false, error: "email_and_password_required" });
+      return res.status(400).json({ ok: false, error: "email_and_password_required" });
     }
 
     const db = await getDb();
@@ -69,8 +67,6 @@ router.post("/auth/register", async (req, res) => {
 
     await users.insertOne(userDoc);
 
-    // Nota: register no entrega token (según tu flujo actual).
-    // Si quieres que sí lo entregue, lo ajustamos luego.
     return res.status(201).json({
       ok: true,
       email: userDoc.email,
@@ -78,7 +74,6 @@ router.post("/auth/register", async (req, res) => {
       vipExpiresAt: userDoc.vipExpiresAt,
     });
   } catch (err) {
-    // ✅ Duplicate key (por si acaso)
     if (err?.code === 11000) {
       return res.status(409).json({ ok: false, error: "email_already_exists" });
     }
@@ -88,20 +83,20 @@ router.post("/auth/register", async (req, res) => {
   }
 });
 
-// ✅ LOGIN
+/* =====================================================
+   LOGIN
+   POST /api/auth/login
+===================================================== */
+
 router.post("/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
 
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ ok: false, error: "email_and_password_required" });
+      return res.status(400).json({ ok: false, error: "email_and_password_required" });
     }
 
-    if (!process.env.JWT_SECRET) {
-      return res.status(500).json({ ok: false, error: "jwt_secret_missing" });
-    }
+    if (!requireJwtSecret(res)) return;
 
     const db = await getDb();
     const users = db.collection("users");
@@ -118,7 +113,6 @@ router.post("/auth/login", async (req, res) => {
       return res.status(401).json({ ok: false, error: "invalid_credentials" });
     }
 
-    // ✅ JWT payload (lo mínimo)
     const token = jwt.sign(
       {
         sub: String(user._id),
@@ -147,10 +141,15 @@ router.post("/auth/login", async (req, res) => {
   }
 });
 
-// ✅ ME (lo que te faltaba)
-// GET /api/auth/me
+/* =====================================================
+   ME
+   GET /api/auth/me
+===================================================== */
+
 router.get("/auth/me", async (req, res) => {
   try {
+    if (!requireJwtSecret(res)) return;
+
     const token = getBearerToken(req);
     if (!token) {
       return res.status(401).json({ ok: false, error: "missing_token" });
@@ -158,30 +157,17 @@ router.get("/auth/me", async (req, res) => {
 
     let payload;
     try {
-      payload = verifyJwt(token);
-    } catch (e) {
-      if (e?.code === "jwt_secret_missing") {
-        return res.status(500).json({ ok: false, error: "jwt_secret_missing" });
-      }
-      return res.status(401).json({ ok: false, error: "invalid_token" });
-    }
-
-    const userId = payload?.sub;
-    if (!userId) {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
       return res.status(401).json({ ok: false, error: "invalid_token" });
     }
 
     const db = await getDb();
     const users = db.collection("users");
 
-    let oid;
-    try {
-      oid = new ObjectId(String(userId));
-    } catch {
-      return res.status(401).json({ ok: false, error: "invalid_token" });
-    }
+    const userId = new ObjectId(String(payload.sub));
+    const user = await users.findOne({ _id: userId });
 
-    const user = await users.findOne({ _id: oid });
     if (!user) {
       return res.status(404).json({ ok: false, error: "user_not_found" });
     }
@@ -198,6 +184,102 @@ router.get("/auth/me", async (req, res) => {
     });
   } catch (err) {
     console.error("me error:", err);
+    return res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+/* =====================================================
+   FORGOT PASSWORD
+   POST /api/auth/forgot
+===================================================== */
+
+router.post("/auth/forgot", async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ ok: false, error: "email_required" });
+    }
+
+    if (!requireJwtSecret(res)) return;
+
+    const db = await getDb();
+    const users = db.collection("users");
+    const normalizedEmail = String(email).toLowerCase().trim();
+
+    const user = await users.findOne({ email: normalizedEmail });
+
+    // Seguridad: siempre respondemos ok:true aunque no exista
+    if (!user) return res.json({ ok: true });
+
+    const resetToken = jwt.sign(
+      {
+        sub: String(user._id),
+        email: user.email,
+        type: "pw_reset",
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    const baseUrl =
+      process.env.PUBLIC_APP_URL || "https://membersvip.esteborg.live";
+
+    const resetUrl = `${baseUrl}/#reset?token=${encodeURIComponent(resetToken)}`;
+
+    // 🔥 Aquí deberías enviar email real (SendGrid, Resend, etc.)
+    console.log("[PASSWORD RESET LINK]", resetUrl);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("forgot error:", err);
+    return res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+/* =====================================================
+   RESET PASSWORD
+   POST /api/auth/reset
+===================================================== */
+
+router.post("/auth/reset", async (req, res) => {
+  try {
+    const { token, password } = req.body || {};
+
+    if (!token || !password) {
+      return res.status(400).json({ ok: false, error: "token_and_password_required" });
+    }
+
+    if (String(password).length < 8) {
+      return res.status(400).json({ ok: false, error: "password_too_short" });
+    }
+
+    if (!requireJwtSecret(res)) return;
+
+    let payload;
+    try {
+      payload = jwt.verify(String(token), process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ ok: false, error: "invalid_or_expired_token" });
+    }
+
+    if (payload?.type !== "pw_reset" || !payload?.sub) {
+      return res.status(401).json({ ok: false, error: "invalid_token" });
+    }
+
+    const db = await getDb();
+    const users = db.collection("users");
+
+    const userId = new ObjectId(String(payload.sub));
+    const passwordHash = await bcrypt.hash(String(password), 12);
+
+    await users.updateOne(
+      { _id: userId },
+      { $set: { passwordHash, updatedAt: new Date() } }
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("reset error:", err);
     return res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
