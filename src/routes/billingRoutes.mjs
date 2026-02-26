@@ -13,8 +13,6 @@ function getStripe() {
 }
 
 function getPriceMap() {
-  // STRIPE_PRICE_MAP ejemplo:
-  // {"vip30":"price_123","ia90":"price_456","vippremium":"price_789"}
   try {
     return JSON.parse(process.env.STRIPE_PRICE_MAP || "{}");
   } catch {
@@ -36,23 +34,29 @@ router.post("/billing/checkout", async (req, res) => {
 
     const stripe = getStripe();
 
-    const successUrl = process.env.STRIPE_SUCCESS_URL || "https://membersvip.esteborg.live/#miembrosvip";
-    const cancelUrl  = process.env.STRIPE_CANCEL_URL  || "https://membersvip.esteborg.live/#home";
+    const successUrl =
+      process.env.STRIPE_SUCCESS_URL || "https://membersvip.esteborg.live/#miembrosvip";
+    const cancelUrl =
+      process.env.STRIPE_CANCEL_URL || "https://membersvip.esteborg.live/#home";
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: successUrl,
       cancel_url: cancelUrl,
-      // Tip: si quieres amarrar el usuario por email/token luego, lo metemos aquí.
+
+      // ✅ Esto hace que aparezca el campo "Add promotion code" en Checkout
+      allow_promotion_codes: true,
     });
 
     return res.json({ ok: true, url: session.url });
   } catch (err) {
     console.error("checkout error:", err);
+
     if (err?.code === "stripe_secret_missing") {
       return res.status(500).json({ ok: false, error: "stripe_secret_missing" });
     }
+
     return res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
