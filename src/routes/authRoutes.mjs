@@ -29,24 +29,51 @@ function requireJwtSecret(res) {
 }
 
 function allowUnverifiedLogin() {
+  // Render ENV: ESTEBORG_ALLOW_UNVERIFIED_LOGIN = "1" para permitir acceso sin verificar
   return String(process.env.ESTEBORG_ALLOW_UNVERIFIED_LOGIN || "0") === "1";
 }
 
 function getPublicAppUrl() {
-  return (process.env.PUBLIC_APP_URL || "https://membersvip.esteborg.live").replace(/\/+$/, "");
+  return process.env.PUBLIC_APP_URL || "https://membersvip.esteborg.live";
 }
 
-function getEmailFrom() {
-  // asegúrate que exista en Render
-  return process.env.EMAIL_FROM || "no-reply@esteborg.live";
-}
+async function sendVerifyEmail({ toEmail, userId }) {
+  // Si no hay Resend configurado, no truena el registro/login; solo no manda mail.
+  if (!process.env.RESEND_API_KEY) return { skipped: true, reason: "resend_missing" };
+  if (!process.env.EMAIL_FROM) return { skipped: true, reason: "email_from_missing" };
+  if (!process.env.JWT_SECRET) return { skipped: true, reason: "jwt_secret_missing" };
 
-async function delay(ms) {
-  await new Promise((r) => setTimeout(r, ms));
+  const verifyToken = jwt.sign(
+    { sub: String(userId), type: "verify_email" },
+    process.env.JWT_SECRET,
+    { expiresIn: "30m" }
+  );
+
+  const verifyUrl = `${getPublicAppUrl()}/#reset?token=${encodeURIComponent(verifyToken)}`;
+
+  await resend.emails.send({
+    from: process.env.EMAIL_FROM,
+    to: toEmail,
+    subject: "Verifica tu correo - Esteborg VIP",
+    html: `
+      <div style="font-family:Inter,Arial;padding:30px;background:#0e1016;color:#f4f1e8">
+        <h2 style="color:#d7b66a;margin:0 0 10px">Verificación de correo</h2>
+        <p style="opacity:.9;margin:0 0 14px">Confirma tu correo para poder iniciar sesión.</p>
+        <a href="${verifyUrl}"
+           style="display:inline-block;padding:14px 22px;background:#d7b66a;color:#101010;
+           font-weight:800;border-radius:12px;text-decoration:none;margin-top:6px">
+           Verificar correo
+        </a>
+        <p style="margin-top:18px;font-size:12px;opacity:.7">Este link expira en 30 minutos.</p>
+      </div>
+    `,
+  });
+
+  return { ok: true };
 }
 
 /* =====================================================
-   REGISTER + SEND VERIFY EMAIL
+   REGISTER
 ===================================================== */
 
 router.post("/auth/register", async (req, res) => {
@@ -55,9 +82,6 @@ router.post("/auth/register", async (req, res) => {
 
     if (!email || !password) {
       return res.status(400).json({ ok: false, error: "email_and_password_required" });
-    }
-    if (String(password).length < 8) {
-      return res.status(400).json({ ok: false, error: "password_too_short" });
     }
 
     const db = await getDb();
@@ -72,66 +96,45 @@ router.post("/auth/register", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(String(password), 12);
 
-    // OJO: esto es tu lógica actual. Si quieres "sin plan" al registrar, lo ajustamos después.
-    const safePlan = plan === "ia90" ? "ia90" : "vip30";
-    const days = getVipDurationDays(safePlan);
-    const vipExpiresAt = addDays(new Date(), days);
+    // ✅ IMPORTANTE: no activar VIP gratis. Si no viene plan válido, dejamos "free"
+    const safePlan =
+      plan === "planesteborgiaexperto" ||
+      plan === "planesteborg30diascom" ||
+      plan === "planesteborg30diasvts" ||
+      plan === "evaluatuerp" ||
+      plan === "planesteborg30diasbund" ||
+      plan === "vippremium" ||
+      plan === "esteborgmaster" ||
+      plan === "planesteborgcoach1hr"
+        ? plan
+        : "free";
+
+    // Para free, no hay vipExpiresAt real. (si quieres, pon null)
+    let vipExpiresAt = null;
+    if (safePlan !== "free") {
+      const days = getVipDurationDays(safePlan);
+      vipExpiresAt = addDays(new Date(), days);
+    }
 
     const now = new Date();
 
-    const insert = await users.insertOne({
+    const ins = await users.insertOne({
       email: normalizedEmail,
       passwordHash,
       plan: safePlan,
       modulesAllowed: Array.isArray(modulesAllowed) ? modulesAllowed : [],
       vipExpiresAt,
       status: "active",
+      emailVerified: false, // ✅ candado
       createdAt: now,
       updatedAt: now,
-
-      // ✅ NUEVO
-      emailVerified: false,
-      verifiedAt: null,
     });
 
-    // ✅ manda correo de verificación
-    if (!requireJwtSecret(res)) return;
-
-    const verifyToken = jwt.sign(
-      { sub: String(insert.insertedId), type: "email_verify" },
-      process.env.JWT_SECRET,
-      { expiresIn: "24h" }
-    );
-
-    const verifyUrl = `${getPublicAppUrl()}/#verify?token=${encodeURIComponent(verifyToken)}`;
-
+    // Enviamos verificación (no bloquea si falla)
     try {
-      await resend.emails.send({
-        from: getEmailFrom(),
-        to: normalizedEmail,
-        subject: "Verifica tu email — Esteborg VIP",
-        html: `
-          <div style="font-family:Inter,Arial;padding:30px;background:#0b0d12;color:#f4f1e8">
-            <h2 style="margin:0 0 10px;color:#d7b66a">Verificación de correo</h2>
-            <p style="opacity:.9;line-height:1.5">
-              Para activar tu acceso, verifica tu email dando clic aquí:
-            </p>
-            <a href="${verifyUrl}"
-               style="display:inline-block;padding:14px 22px;
-               background:#d7b66a;color:#101010;
-               font-weight:800;border-radius:14px;
-               text-decoration:none;margin-top:14px">
-               Verificar correo
-            </a>
-            <p style="margin-top:18px;font-size:12px;opacity:.7">
-              Este link expira en 24 horas.
-            </p>
-          </div>
-        `,
-      });
+      await sendVerifyEmail({ toEmail: normalizedEmail, userId: ins.insertedId });
     } catch (e) {
-      // No tumbes registro si falla el mail (pero sí loggea)
-      console.error("verify email send failed:", e);
+      console.warn("sendVerifyEmail(register) failed:", e?.message || e);
     }
 
     return res.status(201).json({ ok: true });
@@ -142,107 +145,7 @@ router.post("/auth/register", async (req, res) => {
 });
 
 /* =====================================================
-   VERIFY EMAIL
-===================================================== */
-
-router.post("/auth/verify", async (req, res) => {
-  try {
-    const { token } = req.body || {};
-    if (!token) return res.status(400).json({ ok: false, error: "token_required" });
-    if (!requireJwtSecret(res)) return;
-
-    let payload;
-    try {
-      payload = jwt.verify(String(token), process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ ok: false, error: "invalid_or_expired_token" });
-    }
-
-    if (payload?.type !== "email_verify" || !payload?.sub) {
-      return res.status(401).json({ ok: false, error: "invalid_token" });
-    }
-
-    const db = await getDb();
-    const users = db.collection("users");
-
-    await users.updateOne(
-      { _id: new ObjectId(String(payload.sub)) },
-      { $set: { emailVerified: true, verifiedAt: new Date(), updatedAt: new Date() } }
-    );
-
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error("verify error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
-  }
-});
-
-/* =====================================================
-   RESEND VERIFY (opcional pero MUY recomendado)
-===================================================== */
-
-router.post("/auth/resend-verify", async (req, res) => {
-  try {
-    const { email } = req.body || {};
-    if (!email) return res.status(400).json({ ok: false, error: "email_required" });
-    if (!requireJwtSecret(res)) return;
-
-    // 🔒 anti-enumeración / timing
-    await delay(500);
-
-    const db = await getDb();
-    const users = db.collection("users");
-
-    const normalizedEmail = String(email).toLowerCase().trim();
-    const user = await users.findOne({ email: normalizedEmail });
-
-    // Siempre ok
-    if (!user) return res.json({ ok: true });
-
-    // Si ya está verificado, igual ok
-    if (user.emailVerified) return res.json({ ok: true });
-    
-     if (user.emailVerified === false) {
-  return res.status(403).json({ ok:false, error:"email_not_verified" });
-}
-
-    const verifyToken = jwt.sign(
-      { sub: String(user._id), type: "email_verify" },
-      process.env.JWT_SECRET,
-      { expiresIn: "24h" }
-    );
-
-    const verifyUrl = `${getPublicAppUrl()}/#verify?token=${encodeURIComponent(verifyToken)}`;
-
-    await resend.emails.send({
-      from: getEmailFrom(),
-      to: user.email,
-      subject: "Tu link de verificación — Esteborg VIP",
-      html: `
-        <div style="font-family:Inter,Arial;padding:30px;background:#0b0d12;color:#f4f1e8">
-          <h2 style="margin:0 0 10px;color:#d7b66a">Verifica tu correo</h2>
-          <p style="opacity:.9;line-height:1.5">Aquí está tu link:</p>
-          <a href="${verifyUrl}"
-             style="display:inline-block;padding:14px 22px;
-             background:#d7b66a;color:#101010;
-             font-weight:800;border-radius:14px;
-             text-decoration:none;margin-top:14px">
-             Verificar correo
-          </a>
-          <p style="margin-top:18px;font-size:12px;opacity:.7">Expira en 24 horas.</p>
-        </div>
-      `,
-    });
-
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error("resend-verify error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
-  }
-});
-
-/* =====================================================
-   LOGIN (bloquea si no está verificado)
+   LOGIN
 ===================================================== */
 
 router.post("/auth/login", async (req, res) => {
@@ -263,37 +166,25 @@ router.post("/auth/login", async (req, res) => {
 
     if (!user) return res.status(401).json({ ok: false, error: "invalid_credentials" });
 
-    // ✅ NUEVO: Bloqueo por verificación (feature flag)
-    if (!allowUnverifiedLogin() && !user.emailVerified) {
-      return res.status(403).json({ ok: false, error: "email_not_verified" });
-    }
-
     const okPass = await bcrypt.compare(String(password), user.passwordHash);
     if (!okPass) return res.status(401).json({ ok: false, error: "invalid_credentials" });
+
+    // ✅ Candado Netflix
+    if (!allowUnverifiedLogin() && user.emailVerified === false) {
+      return res.status(403).json({ ok: false, error: "email_not_verified" });
+    }
 
     const token = jwt.sign(
       {
         sub: String(user._id),
         email: user.email,
         plan: user.plan,
-        modulesAllowed: user.modulesAllowed || [],
       },
       process.env.JWT_SECRET,
       { expiresIn: "30d" }
     );
 
-    return res.json({
-      ok: true,
-      token,
-      user: {
-        email: user.email,
-        plan: user.plan,
-        modulesAllowed: user.modulesAllowed || [],
-        vipExpiresAt: user.vipExpiresAt,
-        status: user.status,
-        emailVerified: !!user.emailVerified,
-      },
-    });
+    return res.json({ ok: true, token });
   } catch (err) {
     console.error("login error:", err);
     return res.status(500).json({ ok: false, error: "internal_error" });
@@ -309,13 +200,13 @@ router.get("/auth/me", async (req, res) => {
     if (!requireJwtSecret(res)) return;
 
     const token = getBearerToken(req);
-    if (!token) return res.status(401).json({ ok: false, error: "missing_token" });
+    if (!token) return res.status(401).json({ ok: false });
 
     let payload;
     try {
       payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
-      return res.status(401).json({ ok: false, error: "invalid_token" });
+      return res.status(401).json({ ok: false });
     }
 
     const db = await getDb();
@@ -323,7 +214,7 @@ router.get("/auth/me", async (req, res) => {
       _id: new ObjectId(String(payload.sub)),
     });
 
-    if (!user) return res.status(404).json({ ok: false, error: "user_not_found" });
+    if (!user) return res.status(404).json({ ok: false });
 
     return res.json({
       ok: true,
@@ -331,13 +222,12 @@ router.get("/auth/me", async (req, res) => {
         email: user.email,
         plan: user.plan,
         vipExpiresAt: user.vipExpiresAt,
-        status: user.status,
-        emailVerified: !!user.emailVerified,
+        emailVerified: user.emailVerified === true,
       },
     });
   } catch (err) {
     console.error("me error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
+    return res.status(500).json({ ok: false });
   }
 });
 
@@ -349,10 +239,11 @@ router.post("/auth/forgot", async (req, res) => {
   try {
     const { email } = req.body || {};
     if (!email) return res.status(400).json({ ok: false, error: "email_required" });
+
     if (!requireJwtSecret(res)) return;
 
     // 🔒 Pequeño delay anti-ataque
-    await delay(500);
+    await new Promise((r) => setTimeout(r, 500));
 
     const db = await getDb();
     const users = db.collection("users");
@@ -360,8 +251,13 @@ router.post("/auth/forgot", async (req, res) => {
     const normalizedEmail = String(email).toLowerCase().trim();
     const user = await users.findOne({ email: normalizedEmail });
 
-    // Siempre ok
+    // Seguridad: siempre respondemos ok:true aunque no exista
     if (!user) return res.json({ ok: true });
+
+    if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+      console.warn("forgot: resend/email_from missing");
+      return res.json({ ok: true });
+    }
 
     const resetToken = jwt.sign(
       { sub: String(user._id), type: "pw_reset" },
@@ -372,18 +268,16 @@ router.post("/auth/forgot", async (req, res) => {
     const resetUrl = `${getPublicAppUrl()}/#reset?token=${encodeURIComponent(resetToken)}`;
 
     await resend.emails.send({
-      from: getEmailFrom(),
+      from: process.env.EMAIL_FROM,
       to: user.email,
-      subject: "Recupera tu acceso — Esteborg VIP",
+      subject: "Recupera tu acceso Esteborg VIP",
       html: `
         <div style="font-family:Inter,Arial;padding:30px;background:#0e1016;color:#f4f1e8">
-          <h2 style="color:#d7b66a;margin:0 0 10px;">Recuperación de contraseña</h2>
-          <p>Haz clic para crear una nueva contraseña:</p>
+          <h2 style="color:#d7b66a;margin:0 0 10px">Recuperación de contraseña</h2>
+          <p style="opacity:.9;margin:0 0 14px">Haz clic para crear una nueva contraseña.</p>
           <a href="${resetUrl}"
-             style="display:inline-block;padding:14px 22px;
-             background:#d7b66a;color:#101010;
-             font-weight:800;border-radius:12px;
-             text-decoration:none;margin-top:14px">
+             style="display:inline-block;padding:14px 22px;background:#d7b66a;color:#101010;
+             font-weight:800;border-radius:12px;text-decoration:none;margin-top:6px">
              Resetear contraseña
           </a>
           <p style="margin-top:18px;font-size:12px;opacity:.7">Este link expira en 15 minutos.</p>
@@ -405,12 +299,15 @@ router.post("/auth/forgot", async (req, res) => {
 router.post("/auth/reset", async (req, res) => {
   try {
     const { token, password } = req.body || {};
+
     if (!token || !password) {
       return res.status(400).json({ ok: false, error: "token_and_password_required" });
     }
+
     if (String(password).length < 8) {
       return res.status(400).json({ ok: false, error: "password_too_short" });
     }
+
     if (!requireJwtSecret(res)) return;
 
     let payload;
@@ -437,6 +334,78 @@ router.post("/auth/reset", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("reset error:", err);
+    return res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+/* =====================================================
+   RESEND VERIFY
+===================================================== */
+
+router.post("/auth/resend-verify", async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ ok: false, error: "email_required" });
+    if (!requireJwtSecret(res)) return;
+
+    await new Promise((r) => setTimeout(r, 400));
+
+    const db = await getDb();
+    const users = db.collection("users");
+    const normalizedEmail = String(email).toLowerCase().trim();
+
+    const user = await users.findOne({ email: normalizedEmail });
+    // siempre ok por seguridad
+    if (!user) return res.json({ ok: true });
+
+    // Si ya está verificado, ok
+    if (user.emailVerified === true) return res.json({ ok: true });
+
+    try {
+      await sendVerifyEmail({ toEmail: user.email, userId: user._id });
+    } catch (e) {
+      console.warn("sendVerifyEmail(resend) failed:", e?.message || e);
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("resend-verify error:", err);
+    return res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+/* =====================================================
+   VERIFY EMAIL
+===================================================== */
+
+router.post("/auth/verify", async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ ok: false, error: "token_required" });
+    if (!requireJwtSecret(res)) return;
+
+    let payload;
+    try {
+      payload = jwt.verify(String(token), process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ ok: false, error: "invalid_or_expired_token" });
+    }
+
+    if (payload?.type !== "verify_email" || !payload?.sub) {
+      return res.status(401).json({ ok: false, error: "invalid_token" });
+    }
+
+    const db = await getDb();
+    const users = db.collection("users");
+
+    await users.updateOne(
+      { _id: new ObjectId(String(payload.sub)) },
+      { $set: { emailVerified: true, updatedAt: new Date() } }
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("verify error:", err);
     return res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
