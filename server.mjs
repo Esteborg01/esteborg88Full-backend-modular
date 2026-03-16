@@ -1,74 +1,115 @@
-// server.mjs
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 
-import { compressHistoryMiddleware } from "./middleware/compressHistory.mjs";
-import { rateLimiter } from "./middleware/rateLimiter.mjs";
-import { longMessageGuard } from "./middleware/longMessageGuard.mjs";
+import healthRoutes from "./src/routes/healthRoutes.mjs";
+import authRoutes from "./src/routes/authRoutes.mjs";
+import billingRoutes from "./src/routes/billingRoutes.mjs";
+import { stripeWebhookHandler } from "./src/routes/stripeWebhook.mjs";
 
-import { openai } from "./config/openaiClient.mjs";
+import { registerEsteborgFullRoutes } from "./src/modules/esteborgFullRoutes.mjs";
+import { registerComunicaRoutes } from "./src/modules/comunicaRoutes.mjs";
+import { registerVentasRoutes } from "./src/modules/ventasRoutes.mjs";
+import { registerErpevRoutes } from "./src/modules/erpevRoutes.mjs";
+import { registerIaVipComRoutes } from "./src/modules/iavipcomRoutes.mjs";
+import { registerTokkenRoutes } from "./src/modules/tokkenRoutes.mjs";
+import { registerDemoRoutes } from "./src/modules/demoWelcomeRoutes.mjs";
 
-import { registerEsteborgFullRoutes } from "./modules/esteborgFullRoutes.mjs";
-import { registerComunicaRoutes } from "./modules/comunicaRoutes.mjs";
-import { registerVentasRoutes } from "./modules/ventasRoutes.mjs";
-import { registerErpevRoutes } from "./modules/erpevRoutes.mjs";
-import { registerDemoRoutes } from "./modules/demoWelcomeRoutes.mjs";
-import { registerTokkenRoutes } from "./modules/tokkenRoutes.mjs";
-import { registerIaVipComRoutes } from "./modules/iavipcomRoutes.mjs";
+import { rateLimiter } from "./src/middleware/rateLimiter.mjs";
+import { compressHistoryMiddleware } from "./src/middleware/compressHistory.mjs";
+import { longMessageGuard } from "./src/middleware/longMessageGuard.mjs";
 
-import healthRoutes from "./routes/healthRoutes.mjs";
-import authRoutes from "./routes/authRoutes.mjs";
-import billingRoutes from "./routes/billingRoutes.mjs";
-
-import { stripeWebhookHandler } from "./routes/stripeWebhook.mjs";
+import { openai } from "./src/config/openaiClient.mjs";
 
 dotenv.config();
 
 const app = express();
 
-app.use(cors());
+/* =========================
+CORS
+========================= */
+
+app.use(cors({
+ origin: "*"
+}));
+
+/* =========================
+STRIPE WEBHOOK
+Debe ir ANTES del body parser
+========================= */
 
 app.post(
-  "/api/stripe/webhook",
-  express.raw({ type: "application/json" }),
-  stripeWebhookHandler
+ "/api/stripe/webhook",
+ express.raw({ type: "application/json" }),
+ stripeWebhookHandler
 );
+
+/* =========================
+BODY PARSER
+========================= */
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+/* =========================
+MIDDLEWARE GLOBAL
+========================= */
 
 app.use(rateLimiter);
 app.use(longMessageGuard);
 app.use(compressHistoryMiddleware);
 
+/* =========================
+ROUTES
+========================= */
+
 app.use("/api", healthRoutes);
 app.use("/api", authRoutes);
 app.use("/api", billingRoutes);
 
-app.get("/", (req, res) => {
-  res.send("Esteborg backend modular está vivo ✅");
-});
+/* =========================
+IA MODULES
+========================= */
 
 registerEsteborgFullRoutes(app, openai);
 registerComunicaRoutes(app, openai);
 registerVentasRoutes(app, openai);
 registerErpevRoutes(app, openai);
-registerDemoRoutes(app, openai);
-registerTokkenRoutes(app, openai);
 registerIaVipComRoutes(app, openai);
+registerTokkenRoutes(app, openai);
+registerDemoRoutes(app, openai);
 
-app.use((req, res) => {
-  res.status(404).json({ error: "not_found", path: req.path });
+/* =========================
+ROOT
+========================= */
+
+app.get("/", (req, res) => {
+ res.send("Esteborg backend modular running");
 });
+
+/* =========================
+ERROR HANDLER
+========================= */
 
 app.use((err, req, res, next) => {
-  console.error("❌ Unhandled error:", err);
-  res.status(500).json({ error: "internal_error" });
+
+ console.error("Server error:", err);
+
+ res.status(500).json({
+  ok: false,
+  error: "internal_server_error"
+ });
+
 });
+
+/* =========================
+START SERVER
+========================= */
 
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+
+ console.log("🚀 Esteborg backend running on port", PORT);
+
 });
