@@ -3,86 +3,56 @@ import Stripe from "stripe";
 
 const router = express.Router();
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
- apiVersion: "2024-06-20"
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-/* =========================
-PRICE MAP
-========================= */
+const PRICE_MAP = JSON.parse(process.env.STRIPE_PRICE_MAP || "{}");
 
-let PRICE_MAP = {};
+router.post("/billing/create-checkout", async (req,res)=>{
 
-try {
- PRICE_MAP = JSON.parse(process.env.STRIPE_PRICE_MAP || "{}");
-} catch (e) {
- console.error("Invalid STRIPE_PRICE_MAP");
-}
+ try{
 
-/* =========================
-CREATE CHECKOUT SESSION
-========================= */
-
-router.post("/billing/create-checkout", async (req, res) => {
-
- try {
-
- const { plan, email } = req.body;
-
- if (!plan) {
-  return res.status(400).json({
-   ok: false,
-   error: "missing_plan"
-  });
- }
+ const {plan,email} = req.body;
 
  const priceId = PRICE_MAP[plan];
 
- if (!priceId) {
-  return res.status(400).json({
-   ok: false,
-   error: "invalid_plan"
-  });
+ if(!priceId){
+  return res.status(400).json({error:"invalid_plan"});
  }
 
  const session = await stripe.checkout.sessions.create({
 
-  mode: "payment",
+  mode:"payment",
 
-  payment_method_types: ["card"],
+  payment_method_types:["card"],
 
-  line_items: [
+  line_items:[
    {
-    price: priceId,
-    quantity: 1
+    price:priceId,
+    quantity:1
    }
   ],
 
-  success_url: process.env.STRIPE_SUCCESS_URL,
-  cancel_url: process.env.STRIPE_CANCEL_URL,
+  customer_email:email,
 
-  customer_email: email,
+  success_url:process.env.STRIPE_SUCCESS_URL,
+  cancel_url:process.env.STRIPE_CANCEL_URL,
 
-  metadata: {
-   email: email,
-   plan: plan
+  metadata:{
+   email,
+   plan
   }
 
  });
 
  res.json({
-  ok: true,
-  url: session.url
+  ok:true,
+  url:session.url
  });
 
- } catch (err) {
+ }catch(err){
 
- console.error("Stripe checkout error:", err);
-
- res.status(500).json({
-  ok: false,
-  error: "stripe_checkout_failed"
- });
+ console.error("Stripe error:",err);
+ res.status(500).json({error:"checkout_failed"});
 
  }
 
