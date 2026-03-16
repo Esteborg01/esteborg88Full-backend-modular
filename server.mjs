@@ -1,96 +1,74 @@
+// server.mjs
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { MongoClient } from "mongodb";
 
-// Rutas
+import { compressHistoryMiddleware } from "./middleware/compressHistory.mjs";
+import { rateLimiter } from "./middleware/rateLimiter.mjs";
+import { longMessageGuard } from "./middleware/longMessageGuard.mjs";
+
+import { openai } from "./config/openaiClient.mjs";
+
+import { registerEsteborgFullRoutes } from "./modules/esteborgFullRoutes.mjs";
+import { registerComunicaRoutes } from "./modules/comunicaRoutes.mjs";
+import { registerVentasRoutes } from "./modules/ventasRoutes.mjs";
+import { registerErpevRoutes } from "./modules/erpevRoutes.mjs";
+import { registerDemoRoutes } from "./modules/demoWelcomeRoutes.mjs";
+import { registerTokkenRoutes } from "./modules/tokkenRoutes.mjs";
+import { registerIaVipComRoutes } from "./modules/iavipcomRoutes.mjs";
+
+import healthRoutes from "./routes/healthRoutes.mjs";
 import authRoutes from "./routes/authRoutes.mjs";
-import stripeWebhook from "./routes/stripeWebhook.mjs";
+import billingRoutes from "./routes/billingRoutes.mjs";
+
+import { stripeWebhookHandler } from "./routes/stripeWebhook.mjs";
 
 dotenv.config();
 
 const app = express();
 
-/* =========================
-CORS
-========================= */
-app.use(cors({
-  origin: [
-    process.env.PUBLIC_APP_URL,
-    process.env.APP_URL,
-    "https://membersvip.esteborg.live"
-  ],
-  credentials: true
-}));
+app.use(cors());
 
-/* =========================
-STRIPE WEBHOOK (RAW BODY)
-DEBE IR ANTES DE express.json()
-========================= */
 app.post(
   "/api/stripe/webhook",
   express.raw({ type: "application/json" }),
-  stripeWebhook
+  stripeWebhookHandler
 );
 
-/* =========================
-BODY PARSER NORMAL
-========================= */
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-/* =========================
-MONGO CONNECTION
-========================= */
+app.use(rateLimiter);
+app.use(longMessageGuard);
+app.use(compressHistoryMiddleware);
 
-if (!process.env.MONGO_URI) {
-  console.error("❌ MONGO_URI missing");
-  process.exit(1);
-}
+app.use("/api", healthRoutes);
+app.use("/api", authRoutes);
+app.use("/api", billingRoutes);
 
-const client = new MongoClient(process.env.MONGO_URI);
-
-await client.connect();
-
-const db = client.db();
-
-console.log("✅ Mongo connected");
-
-/* =========================
-API ROUTES
-========================= */
-
-app.use("/api/auth", authRoutes(db));
-
-/* =========================
-HEALTHCHECK (Render)
-========================= */
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "esteborg-backend",
-    time: new Date()
-  });
+app.get("/", (req, res) => {
+  res.send("Esteborg backend modular está vivo ✅");
 });
 
-/* =========================
-ERROR HANDLER
-========================= */
+registerEsteborgFullRoutes(app, openai);
+registerComunicaRoutes(app, openai);
+registerVentasRoutes(app, openai);
+registerErpevRoutes(app, openai);
+registerDemoRoutes(app, openai);
+registerTokkenRoutes(app, openai);
+registerIaVipComRoutes(app, openai);
+
+app.use((req, res) => {
+  res.status(404).json({ error: "not_found", path: req.path });
+});
 
 app.use((err, req, res, next) => {
-  console.error("Server error:", err);
-  res.status(500).json({
-    ok: false,
-    error: "internal_server_error"
-  });
+  console.error("❌ Unhandled error:", err);
+  res.status(500).json({ error: "internal_error" });
 });
 
-/* =========================
-START SERVER
-========================= */
-
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Esteborg backend running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
