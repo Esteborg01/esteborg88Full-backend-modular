@@ -49,11 +49,8 @@ In Thunder Client:
 Authorization: Bearer DEIN_TOKEN`,
 };
 
-// ===============================
-// SESSION ENGINE (in-memory)
-// ===============================
 const ACTIVE_SESSIONS = new Map();
-const SESSION_TTL = 1000 * 60 * 60 * 4; // 4 horas
+const SESSION_TTL = 1000 * 60 * 60 * 4;
 
 function normalizeLang(lang) {
   const key = typeof lang === "string" ? lang.toLowerCase() : "es";
@@ -63,7 +60,6 @@ function normalizeLang(lang) {
 function getOrInitSession(sessionKey, langKey) {
   let session = ACTIVE_SESSIONS.get(sessionKey) || null;
 
-  // TTL
   if (session && Date.now() - session.createdAt > SESSION_TTL) {
     ACTIVE_SESSIONS.delete(sessionKey);
     session = null;
@@ -102,7 +98,6 @@ export function registerIaVipComRoutes(app, openai) {
         const { message, userName, history, lang } = req.body || {};
         const langKey = normalizeLang(lang);
 
-        // ✅ Si por alguna razón no llega message
         if (!message || typeof message !== "string") {
           return res.status(400).json({
             ok: false,
@@ -111,19 +106,15 @@ export function registerIaVipComRoutes(app, openai) {
           });
         }
 
-        // ✅ Session key por usuario (JWT sub)
         const sessionKey = req.user?.sub || req.user?.email || "anon";
         const session = getOrInitSession(sessionKey, langKey);
 
-        // Guardar nombre si viene
         if (typeof userName === "string" && userName.trim()) {
           session.memory.userName = userName.trim();
         }
 
-        // Guardar último mensaje usuario
         session.memory.lastUserMessage = message.trim();
 
-        // ✅ Cerebro
         const reply = await getIaVipComReply(openai, {
           message,
           history,
@@ -133,7 +124,6 @@ export function registerIaVipComRoutes(app, openai) {
           session,
         });
 
-        // Guardar último mensaje assistant + turn
         session.turn += 1;
         session.memory.lastAssistantMessage = String(reply || "").slice(0, 1200);
 
@@ -141,7 +131,6 @@ export function registerIaVipComRoutes(app, openai) {
           ok: true,
           module: "iavipcom",
           reply,
-          // info útil opcional (sin exponer cosas sensibles)
           user: {
             email: req.userDb?.email,
             plan: req.userDb?.plan,
