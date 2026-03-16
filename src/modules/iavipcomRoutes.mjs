@@ -2,7 +2,16 @@
 
 import { requireAuth } from "../middleware/requireAuth.mjs";
 import { requireVip } from "../middleware/requireVip.mjs";
+import { requireDailyQuota } from "../middleware/requireDailyQuota.mjs";
 import { getIaVipComReply } from "../services/iavipcomService.mjs";
+import {
+  getAiCachedReply,
+  saveAiCachedReply,
+} from "../services/aiCacheService.mjs";
+import {
+  consumeDailyQuota,
+  getQuotaSnapshot,
+} from "../services/quotaService.mjs";
 
 const FALLBACK_BY_LANG = {
   es: `¡Qué gusto saludarte! 😊 Para usar Esteborg IA VIP necesitas iniciar sesión y enviar tu token (JWT).
@@ -19,34 +28,6 @@ If you're testing in Thunder Client:
 2) Copy the token
 3) Add header:
 Authorization: Bearer YOUR_TOKEN`,
-  pt: `Que bom te ver! 😊 Para usar Esteborg IA VIP você precisa fazer login e enviar seu token (JWT).
-
-No Thunder Client:
-1) Faça login em /api/auth/login
-2) Copie o token
-3) Header:
-Authorization: Bearer SEU_TOKEN`,
-  fr: `Ravi de te voir ! 😊 Pour utiliser Esteborg IA VIP, tu dois te connecter et envoyer ton token (JWT).
-
-Dans Thunder Client :
-1) Login sur /api/auth/login
-2) Copie le token
-3) Header:
-Authorization: Bearer TON_TOKEN`,
-  it: `Che bello vederti! 😊 Per usare Esteborg IA VIP devi fare login e inviare il tuo token (JWT).
-
-In Thunder Client:
-1) Login su /api/auth/login
-2) Copia il token
-3) Header:
-Authorization: Bearer IL_TUO_TOKEN`,
-  de: `Schön, dich zu sehen! 😊 Um Esteborg IA VIP zu nutzen, musst du dich anmelden und dein Token (JWT) senden.
-
-In Thunder Client:
-1) Login unter /api/auth/login
-2) Token kopieren
-3) Header:
-Authorization: Bearer DEIN_TOKEN`,
 };
 
 const ACTIVE_SESSIONS = new Map();
@@ -93,6 +74,7 @@ export function registerIaVipComRoutes(app, openai) {
     "/api/modules/iavipcom",
     requireAuth,
     requireVip({ moduleKey: "iavipcom" }),
+    requireDailyQuota({ moduleKey: "iavipcom" }),
     async (req, res) => {
       try {
         const { message, userName, history, lang } = req.body || {};
@@ -108,9 +90,62 @@ export function registerIaVipComRoutes(app, openai) {
 
         const sessionKey = req.user?.sub || req.user?.email || "anon";
         const session = getOrInitSession(sessionKey, langKey);
+        const plan = req.userDb?.plan || "vip";
+        const email = req.userDb?.email || req.user?.email || "";
 
         if (typeof userName === "string" && userName.trim()) {
           session.memory.userName = userName.trim();
+        }
+
+        const effectiveUserName = session.memory.userName || userName || "";
+
+        const cached = await getAiCachedReply({
+          moduleKey: "iavipcom",
+          message,
+          history,
+          lang: langKey,
+          userName: effectiveUserName,
+          plan,
+        });
+
+        if (cached.hit) {
+          const quota = await getQuotaSnapshot(email, plan);
+
+          return res.json({
+            ok: true,
+            module: "iavipcom",
+            reply: cached.reply,
+            cache: {
+              hit: true,
+              key: cached.cacheKey,
+            },
+            user: {
+              email: req.userDb?.email,
+              plan: req.userDb?.plan,
+              vipExpiresAt: req.userDb?.vipExpiresAt,
+            },
+            quota,
+          });
+        }
+
+        const quotaConsumed = await consumeDailyQuota({
+          email,
+          plan,
+          moduleKey: "iavipcom",
+        });
+
+        if (!quotaConsumed.allowed) {
+          return res.status(429).json({
+            ok: false,
+            error: "daily_quota_exceeded",
+            message: "Ya alcanzaste tu límite diario de prompts.",
+            quota: {
+              date: quotaConsumed.dateKey,
+              used: quotaConsumed.used,
+              limit: quotaConsumed.limit,
+              remaining: quotaConsumed.remaining,
+            },
+          });
         }
 
         session.memory.lastUserMessage = message.trim();
@@ -118,7 +153,7 @@ export function registerIaVipComRoutes(app, openai) {
         const reply = await getIaVipComReply(openai, {
           message,
           history,
-          userName: session.memory.userName || userName || "",
+          userName: effectiveUserName,
           lang: langKey,
           userId: sessionKey,
           session,
@@ -127,14 +162,33 @@ export function registerIaVipComRoutes(app, openai) {
         session.turn += 1;
         session.memory.lastAssistantMessage = String(reply || "").slice(0, 1200);
 
+        await saveAiCachedReply({
+          moduleKey: "iavipcom",
+          message,
+          history,
+          lang: langKey,
+          userName: effectiveUserName,
+          plan,
+          reply,
+        });
+
         return res.json({
           ok: true,
           module: "iavipcom",
           reply,
+          cache: {
+            hit: false,
+          },
           user: {
             email: req.userDb?.email,
             plan: req.userDb?.plan,
             vipExpiresAt: req.userDb?.vipExpiresAt,
+          },
+          quota: {
+            date: quotaConsumed.dateKey,
+            used: quotaConsumed.used,
+            limit: quotaConsumed.limit,
+            remaining: quotaConsumed.remaining,
           },
         });
       } catch (err) {
