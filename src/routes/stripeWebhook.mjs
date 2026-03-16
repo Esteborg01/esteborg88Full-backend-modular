@@ -1,167 +1,86 @@
 import Stripe from "stripe";
 import { MongoClient } from "mongodb";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2024-06-20"
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-let mongoClient;
+let client;
 let db;
 
-/* =========================
-Mongo lazy init
-========================= */
-async function getDb() {
-  if (db) return db;
+async function getDb(){
 
-  if (!process.env.MONGO_URI) {
-    throw new Error("MONGO_URI missing");
-  }
+ if(db) return db;
 
-  mongoClient = new MongoClient(process.env.MONGO_URI);
-  await mongoClient.connect();
-  db = mongoClient.db();
+ client = new MongoClient(process.env.MONGO_URI);
+ await client.connect();
 
-  console.log("✅ Mongo connected (webhook)");
+ db = client.db();
 
-  return db;
+ return db;
 }
 
-/* =========================
-Stripe Webhook Handler
-========================= */
+export const stripeWebhookHandler = async (req,res)=>{
 
-export const stripeWebhookHandler = async (req, res) => {
+ const sig = req.headers["stripe-signature"];
 
-  const sig = req.headers["stripe-signature"];
+ let event;
 
-  if (!sig) {
-    return res.status(400).send("Missing stripe signature");
-  }
+ try{
 
-  let event;
+ event = stripe.webhooks.constructEvent(
+  req.body,
+  sig,
+  process.env.STRIPE_WEBHOOK_SECRET
+ );
 
-  try {
+ }catch(err){
 
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
+ console.error("Stripe signature error:",err.message);
+ return res.status(400).send(err.message);
 
-  } catch (err) {
+ }
 
-    console.error("❌ Stripe signature verification failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+ const database = await getDb();
+ const users = database.collection("users");
 
-  }
+ if(event.type === "checkout.session.completed"){
 
-  try {
+ const session = event.data.object;
 
-    const database = await getDb();
-    const users = database.collection("users");
+ const email =
+ session.customer_details?.email ||
+ session.customer_email ||
+ session.metadata?.email;
 
-    /* =========================
-    checkout.session.completed
-    ========================= */
+ if(!email){
 
-    if (event.type === "checkout.session.completed") {
+  console.error("Stripe session without email");
+  return res.json({received:true});
 
-      const session = event.data.object;
+ }
 
-      const email =
-        session.customer_details?.email ||
-        session.customer_email ||
-        session.metadata?.email;
+ const expiresAt = new Date();
+ expiresAt.setMonth(expiresAt.getMonth() + 1);
 
-      if (!email) {
-        console.error("⚠️ Stripe session without email");
-        return res.json({ received: true });
-      }
+ await users.updateOne(
+  {email},
+  {
+   $set:{
+    email,
+    vip:true,
+    emailVerified:true,
+    vipExpiresAt:expiresAt,
+    stripeCustomerId:session.customer,
+    vipActivatedAt:new Date(),
+    updatedAt:new Date()
+   }
+  },
+  {upsert:true}
+ );
 
-      console.log("💰 Pago completado:", email);
+ console.log("VIP activado:",email);
 
-      await users.updateOne(
-        { email },
-        {
-          $set: {
-            email,
-            vip: true,
-            emailVerified: true,
-            stripeCustomerId: session.customer || null,
-            stripeSessionId: session.id,
-            vipActivatedAt: new Date(),
-            updatedAt: new Date()
-          }
-        },
-        { upsert: true }
-      );
+ }
 
-      console.log("✅ Usuario VIP activado:", email);
-    }
+ res.json({received:true});
 
-    /* =========================
-    invoice.payment_succeeded
-    (renovaciones)
-    ========================= */
-
-    if (event.type === "invoice.payment_succeeded") {
-
-      const invoice = event.data.object;
-
-      const email = invoice.customer_email;
-
-      if (email) {
-
-        console.log("🔁 Renovación pagada:", email);
-
-        await users.updateOne(
-          { email },
-          {
-            $set: {
-              vip: true,
-              vipRenewedAt: new Date(),
-              updatedAt: new Date()
-            }
-          }
-        );
-      }
-    }
-
-    /* =========================
-    customer.subscription.deleted
-    (cancelación)
-    ========================= */
-
-    if (event.type === "customer.subscription.deleted") {
-
-      const subscription = event.data.object;
-
-      const email = subscription.customer_email;
-
-      if (email) {
-
-        console.log("❌ Suscripción cancelada:", email);
-
-        await users.updateOne(
-          { email },
-          {
-            $set: {
-              vip: false,
-              vipCanceledAt: new Date(),
-              updatedAt: new Date()
-            }
-          }
-        );
-      }
-    }
-
-    res.json({ received: true });
-
-  } catch (err) {
-
-    console.error("❌ Webhook processing error:", err);
-    res.status(500).send("Webhook handler failed");
-
-  }
 };
