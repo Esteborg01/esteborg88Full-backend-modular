@@ -1,47 +1,31 @@
-// requireVipTokken.mjs
-import fetch from "node-fetch";
+import jwt from "jsonwebtoken";
 
-export async function requireVipTokken(req, res, next) {
-  try {
-    // 1️⃣ Buscar token en TODOS los lugares posibles
-    const authHeader = req.headers.authorization || "";
-    const token =
-      authHeader.replace("Bearer ", "") ||
-      req.headers["x-esteborg-token"] ||
-      req.body?.tokken ||
-      req.query?.tokken;
+export default function requireVipToken(req,res,next){
 
-    if (!token) {
-      req.esteborgMember = false;
-      return next();
-    }
+ const auth = req.headers.authorization;
 
-    // 2️⃣ Validar contra Outseta
-    const response = await fetch(
-      "https://woowpeople.outseta.com/api/v1/tokens/validate",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ token }),
-      }
-    );
+ if(!auth){
+  return res.status(401).json({ok:false,error:"token_required"});
+ }
 
-    const data = await response.json();
+ const token = auth.replace("Bearer ","");
 
-    // 3️⃣ Resultado
-    if (data?.valid === true) {
-      req.esteborgMember = true;
-      req.esteborgTokken = token;
-    } else {
-      req.esteborgMember = false;
-    }
+ try{
 
-    next();
-  } catch (err) {
-    console.error("❌ Error validando Tokken VIP:", err);
-    req.esteborgMember = false;
-    next();
-  }
+ const decoded = jwt.verify(token,process.env.JWT_SECRET);
+
+ if(!decoded.vip){
+  return res.status(403).json({ok:false,error:"vip_required"});
+ }
+
+ req.user = decoded;
+
+ next();
+
+ }catch(err){
+
+ return res.status(401).json({ok:false,error:"invalid_token"});
+
+ }
+
 }
