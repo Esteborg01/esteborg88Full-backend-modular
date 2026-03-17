@@ -1,417 +1,269 @@
-// src/routes/authRoutes.mjs
-
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { MongoClient, ObjectId } from "mongodb";
-import { Resend } from "resend";
+import crypto from "crypto";
+import { ObjectId } from "mongodb";
 
 const router = express.Router();
 
-let client;
-let db;
+const JWT_SECRET = process.env.JWT_SECRET;
+const APP_BASE_URL = process.env.APP_BASE_URL;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const EMAIL_FROM = process.env.EMAIL_FROM;
 
-async function getDb() {
-  if (db) return db;
+// =============================
+// HELPERS
+// =============================
 
-  if (!process.env.MONGO_URI) {
-    throw new Error("mongo_uri_missing");
-  }
-
-  client = new MongoClient(process.env.MONGO_URI);
-  await client.connect();
-  db = client.db();
-
-  console.log("✅ Mongo connected (authRoutes)");
-  return db;
-}
-
-function getPublicAppUrl() {
-  return (
-    process.env.PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    "https://membersvip.esteborg.live"
-  ).replace(/\/+$/, "");
-}
-
-function requireJwtSecret(res) {
-  if (!process.env.JWT_SECRET) {
-    res.status(500).json({ ok: false, error: "jwt_secret_missing" });
-    return false;
-  }
-  return true;
-}
-
-function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
-}
-
-function sanitizeUser(user) {
-  if (!user) return null;
-
-  return {
-    id: String(user._id),
-    email: user.email || "",
-    status: user.status || "inactive",
-    vip: !!user.vip,
-    plan: user.plan || null,
-    modulesAllowed: Array.isArray(user.modulesAllowed) ? user.modulesAllowed : [],
-    vipExpiresAt: user.vipExpiresAt || null,
-    emailVerified: !!user.emailVerified,
-    stripeCustomerId: user.stripeCustomerId || null,
-    createdAt: user.createdAt || null,
-    updatedAt: user.updatedAt || null,
-  };
-}
-
-function isExpired(isoDate) {
-  if (!isoDate) return true;
-  const t = Date.parse(isoDate);
-  if (Number.isNaN(t)) return true;
-  return Date.now() > t;
-}
-
-function signAccessToken(user) {
+function signToken(user) {
   return jwt.sign(
     {
-      sub: String(user._id),
-      email: user.email,
-      vip: !!user.vip,
-      plan: user.plan || null,
-      modulesAllowed: Array.isArray(user.modulesAllowed) ? user.modulesAllowed : [],
+      userId: user._id.toString(),
+      email: user.email
     },
-    process.env.JWT_SECRET,
+    JWT_SECRET,
     { expiresIn: "7d" }
   );
 }
 
-/* =========================
-POST /api/auth/login
-========================= */
-router.post("/auth/login", async (req, res) => {
+function generateResetToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+async function sendEmail({ to, subject, html }) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: EMAIL_FROM, // 👈 IMPORTANTE: "Soporte Esteborg <soporte@esteborg.live>"
+      to,
+      subject,
+      html
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data?.message || "email_send_failed");
+  }
+
+  return data;
+}
+
+// =============================
+// LOGIN
+// =============================
+
+router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    const normalizedEmail = normalizeEmail(email);
-
-    if (!normalizedEmail || !password) {
-      return res.status(400).json({
-        ok: false,
-        error: "missing_fields",
-      });
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, error: "missing_fields" });
     }
 
-    if (!requireJwtSecret(res)) return;
+    const users = req.app.locals.db.collection("users");
 
-    const database = await getDb();
-    const users = database.collection("users");
-
-    const user = await users.findOne({ email: normalizedEmail });
-
+    const user = await users.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(401).json({
-        ok: false,
-        error: "user_not_found",
-      });
+      return res.status(404).json({ ok: false, error: "user_not_found" });
     }
 
-    if (!user.password) {
+    const storedHash = user.passwordHash || user.password || null;
+
+    if (!storedHash) {
       return res.status(403).json({
         ok: false,
-        error: "password_not_set",
+        error: "password_not_set"
       });
     }
 
-    const valid = await bcrypt.compare(password, user.password);
+    const valid = await bcrypt.compare(password, storedHash);
 
     if (!valid) {
       return res.status(401).json({
         ok: false,
-        error: "invalid_password",
+        error: "invalid_credentials"
       });
     }
 
-    if (!user.vip || user.status !== "active") {
-      return res.status(403).json({
-        ok: false,
-        error: "vip_required",
-      });
-    }
-
-    if (user.vipExpiresAt && isExpired(user.vipExpiresAt)) {
-      return res.status(403).json({
-        ok: false,
-        error: "membership_expired",
-      });
-    }
-
-    const token = signAccessToken(user);
+    const token = signToken(user);
 
     return res.json({
       ok: true,
-      token,
-      user: sanitizeUser(user),
+      token
     });
+
   } catch (err) {
-    console.error("[LOGIN]", err);
-    return res.status(500).json({
-      ok: false,
-      error: "login_failed",
-    });
+    console.error("[LOGIN ERROR]", err);
+    return res.status(500).json({ ok: false, error: "internal_server_error" });
   }
 });
 
-/* =========================
-GET /api/auth/me
-========================= */
-router.get("/auth/me", async (req, res) => {
-  try {
-    if (!requireJwtSecret(res)) return;
+// =============================
+// FORGOT PASSWORD
+// =============================
 
-    const auth = req.headers.authorization || "";
-    if (!auth.startsWith("Bearer ")) {
-      return res.status(401).json({
-        ok: false,
-        error: "token_required",
-      });
-    }
-
-    const token = auth.replace("Bearer ", "").trim();
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(401).json({
-        ok: false,
-        error: "invalid_token",
-      });
-    }
-
-    const database = await getDb();
-    const users = database.collection("users");
-
-    const email = normalizeEmail(decoded.email);
-    const user = await users.findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({
-        ok: false,
-        error: "user_not_found",
-      });
-    }
-
-    if (!user.vip || user.status !== "active") {
-      return res.status(403).json({
-        ok: false,
-        error: "vip_required",
-      });
-    }
-
-    if (user.vipExpiresAt && isExpired(user.vipExpiresAt)) {
-      return res.status(403).json({
-        ok: false,
-        error: "membership_expired",
-      });
-    }
-
-    return res.json({
-      ok: true,
-      user: sanitizeUser(user),
-    });
-  } catch (err) {
-    console.error("[ME]", err);
-    return res.status(500).json({
-      ok: false,
-      error: "internal_error",
-    });
-  }
-});
-
-/* =========================
-POST /api/auth/forgot
-========================= */
-router.post("/auth/forgot", async (req, res) => {
+router.post("/forgot", async (req, res) => {
   try {
     const { email } = req.body || {};
-    const normalizedEmail = normalizeEmail(email);
-
-    if (!normalizedEmail) {
-      return res.status(400).json({
-        ok: false,
-        error: "email_required",
-      });
+    if (!email) {
+      return res.status(400).json({ ok: false, error: "missing_email" });
     }
 
-    if (!requireJwtSecret(res)) return;
+    const users = req.app.locals.db.collection("users");
 
-    if (!process.env.RESEND_API_KEY) {
-      console.warn("[FORGOT] RESEND_API_KEY missing");
-      return res.status(500).json({
-        ok: false,
-        error: "resend_api_key_missing",
-      });
-    }
-
-    if (!process.env.EMAIL_FROM) {
-      console.warn("[FORGOT] EMAIL_FROM missing");
-      return res.status(500).json({
-        ok: false,
-        error: "email_from_missing",
-      });
-    }
-
-    const database = await getDb();
-    const users = database.collection("users");
-
-    const user = await users.findOne({ email: normalizedEmail });
-
-    console.log("[FORGOT] Request for:", normalizedEmail);
-
+    const user = await users.findOne({ email: email.toLowerCase() });
     if (!user) {
-      console.warn("[FORGOT] user_not_found:", normalizedEmail);
-      return res.status(404).json({
-        ok: false,
-        error: "user_not_found",
-      });
+      return res.status(404).json({ ok: false, error: "user_not_found" });
     }
 
-    const resetToken = jwt.sign(
+    const token = generateResetToken();
+
+    await users.updateOne(
+      { _id: user._id },
       {
-        sub: String(user._id),
-        type: "pw_reset",
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+        $set: {
+          resetToken: token,
+          resetTokenExpires: Date.now() + 1000 * 60 * 30 // 30 min
+        }
+      }
     );
 
-    const resetUrl = `${getPublicAppUrl()}/#reset?token=${encodeURIComponent(resetToken)}`;
+    const resetLink = `${APP_BASE_URL}/#reset?token=${token}`;
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
-
-    const resp = await resend.emails.send({
-      from: process.env.EMAIL_FROM,
-      to: normalizedEmail,
-      subject: "Recupera tu acceso Esteborg VIP",
+    await sendEmail({
+      to: email,
+      subject: "Recupera tu acceso a Esteborg",
       html: `
-        <div style="font-family:Inter,Arial,sans-serif;padding:24px;background:#0e1016;color:#f4f1e8">
-          <h2 style="margin:0 0 12px;color:#d7b66a;">Recuperación de contraseña</h2>
-          <p style="margin:0 0 16px;">Haz clic en el botón para crear una nueva contraseña.</p>
-          <a href="${resetUrl}" style="display:inline-block;padding:14px 22px;background:#d7b66a;color:#101010;text-decoration:none;border-radius:12px;font-weight:800;">
-            Resetear contraseña
-          </a>
-          <p style="margin-top:16px;font-size:12px;opacity:.75;">Este link expira en 15 minutos.</p>
-        </div>
-      `,
+        <h2>Recuperar acceso</h2>
+        <p>Haz clic aquí para crear un nuevo password:</p>
+        <a href="${resetLink}">${resetLink}</a>
+        <p>Este link expira en 30 minutos.</p>
+      `
     });
-
-    console.log("[FORGOT] Resend response:", resp);
-
-    if (!resp || resp.error) {
-      console.error("[FORGOT] resend failed:", resp?.error || resp);
-      return res.status(500).json({
-        ok: false,
-        error: "email_send_failed",
-        details: resp?.error || null,
-      });
-    }
 
     return res.json({
       ok: true,
-      message: "reset_email_sent",
+      message: "reset_email_sent"
     });
+
   } catch (err) {
-    console.error("[FORGOT]", err);
+    console.error("[FORGOT ERROR]", err);
     return res.status(500).json({
       ok: false,
-      error: "internal_error",
+      error: "email_send_failed",
+      details: err.message
     });
   }
 });
 
-/* =========================
-POST /api/auth/reset
-========================= */
-router.post("/auth/reset", async (req, res) => {
+// =============================
+// RESET PASSWORD
+// =============================
+
+router.post("/reset", async (req, res) => {
   try {
     const { token, password } = req.body || {};
 
     if (!token || !password) {
       return res.status(400).json({
         ok: false,
-        error: "missing_fields",
+        error: "missing_fields"
       });
     }
 
-    if (String(password).length < 8) {
+    if (password.length < 8) {
       return res.status(400).json({
         ok: false,
-        error: "password_too_short",
+        error: "password_too_short"
       });
     }
 
-    if (!requireJwtSecret(res)) return;
+    const users = req.app.locals.db.collection("users");
 
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(400).json({
-        ok: false,
-        error: "invalid_or_expired_token",
-      });
-    }
-
-    if (decoded.type !== "pw_reset" || !decoded.sub) {
-      return res.status(400).json({
-        ok: false,
-        error: "invalid_or_expired_token",
-      });
-    }
-
-    const database = await getDb();
-    const users = database.collection("users");
-
-    const hashedPassword = await bcrypt.hash(String(password), 10);
-
-    const result = await users.findOneAndUpdate(
-      { _id: new ObjectId(decoded.sub) },
-      {
-        $set: {
-          password: hashedPassword,
-          emailVerified: true,
-          updatedAt: new Date(),
-        },
-      },
-      { returnDocument: "after" }
-    );
-
-    const user = result?.value || result;
+    const user = await users.findOne({
+      resetToken: token,
+      resetTokenExpires: { $gt: Date.now() }
+    });
 
     if (!user) {
-      return res.status(404).json({
+      return res.status(400).json({
         ok: false,
-        error: "user_not_found",
+        error: "invalid_or_expired_token"
       });
     }
 
-    let accessToken = null;
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    if (user.vip && user.status === "active" && (!user.vipExpiresAt || !isExpired(user.vipExpiresAt))) {
-      accessToken = signAccessToken(user);
+    await users.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          passwordHash: hashedPassword,
+          password: hashedPassword,
+          updatedAt: new Date()
+        },
+        $unset: {
+          resetToken: "",
+          resetTokenExpires: ""
+        }
+      }
+    );
+
+    const newToken = signToken(user);
+
+    return res.json({
+      ok: true,
+      token: newToken
+    });
+
+  } catch (err) {
+    console.error("[RESET ERROR]", err);
+    return res.status(500).json({
+      ok: false,
+      error: "internal_server_error"
+    });
+  }
+});
+
+// =============================
+// ME (para validar sesión)
+// =============================
+
+router.get("/me", async (req, res) => {
+  try {
+    const auth = req.headers.authorization || "";
+    const token = auth.replace("Bearer ", "");
+
+    if (!token) {
+      return res.status(401).json({ ok: false, error: "no_token" });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const users = req.app.locals.db.collection("users");
+
+    const user = await users.findOne({ _id: new ObjectId(decoded.userId) });
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "user_not_found" });
     }
 
     return res.json({
       ok: true,
-      message: "password_updated",
-      token: accessToken,
-      user: sanitizeUser(user),
+      user: {
+        email: user.email,
+        modulesAllowed: user.modulesAllowed || [],
+        vipExpiresAt: user.vipExpiresAt || null
+      }
     });
+
   } catch (err) {
-    console.error("[RESET]", err);
-    return res.status(500).json({
-      ok: false,
-      error: "internal_error",
-    });
+    return res.status(401).json({ ok: false, error: "invalid_token" });
   }
 });
 
