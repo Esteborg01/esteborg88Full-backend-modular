@@ -42,7 +42,7 @@ app.use((req, res, next) => {
 });
 
 // =============================
-// IMPORTS MODULARES (FORZADOS)
+// IMPORTS CORRECTOS (MODULAR)
 // =============================
 
 let authRoutes, iavipRoutes, comunicaRoutes, ventasRoutes, erpevRoutes;
@@ -55,35 +55,35 @@ try {
 }
 
 try {
-  iavipRoutes = (await import("./src/modules/iavipcomRoutes.mjs")).default;
+  iavipRoutes = (await import("./src/modules/iavipcom/iavipcomRoutes.mjs")).default;
   console.log("✅ iavipRoutes cargado");
 } catch (e) {
   console.error("❌ iavipRoutes ERROR:", e.message);
 }
 
 try {
-  comunicaRoutes = (await import("./src/modules/comunicaRoutes.mjs")).default;
+  comunicaRoutes = (await import("./src/modules/comunica/comunicaRoutes.mjs")).default;
   console.log("✅ comunicaRoutes cargado");
 } catch (e) {
   console.error("❌ comunicaRoutes ERROR:", e.message);
 }
 
 try {
-  ventasRoutes = (await import("./src/modules/ventasRoutes.mjs")).default;
+  ventasRoutes = (await import("./src/modules/ventas/ventasRoutes.mjs")).default;
   console.log("✅ ventasRoutes cargado");
 } catch (e) {
   console.error("❌ ventasRoutes ERROR:", e.message);
 }
 
 try {
-  erpevRoutes = (await import("./src/modules/erpevRoutes.mjs")).default;
+  erpevRoutes = (await import("./src/modules/erpev/erpevRoutes.mjs")).default;
   console.log("✅ erpevRoutes cargado");
 } catch (e) {
   console.error("❌ erpevRoutes ERROR:", e.message);
 }
 
 // =============================
-// MONTAJE
+// MONTAJE DE ROUTES
 // =============================
 
 if (authRoutes) app.use("/api/auth", authRoutes);
@@ -128,7 +128,7 @@ app.use((req, res) => {
 });
 
 // =============================
-// START
+// START SERVER
 // =============================
 
 async function start() {
@@ -142,7 +142,7 @@ async function start() {
     console.log("✅ Mongo conectado");
 
     app.listen(PORT, () => {
-      console.log(`🚀 Server corriendo en ${PORT}`);
+      console.log(`🚀 Server corriendo en puerto ${PORT}`);
     });
 
   } catch (err) {
