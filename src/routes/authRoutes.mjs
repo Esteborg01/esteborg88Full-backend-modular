@@ -353,4 +353,48 @@ router.post("/reset", async (req, res) => {
   }
 });
 
+// ==============================
+// POST-PAGO -> RESOLVE RESET TOKEN
+// ==============================
+router.get("/resolve-checkout", async (req, res) => {
+  try {
+    const checkoutToken = String(req.query?.ct || "").trim();
+
+    if (!checkoutToken) {
+      return res.status(400).json({
+        ok: false,
+        error: "missing_checkout_token"
+      });
+    }
+
+    const checkoutLinks = req.app.locals.db.collection("checkout_links");
+
+    const link = await checkoutLinks.findOne({ checkoutToken });
+
+    if (!link) {
+      return res.status(404).json({
+        ok: false,
+        error: "checkout_token_not_found"
+      });
+    }
+
+    if (link.expiresAt && new Date(link.expiresAt).getTime() < Date.now()) {
+      return res.status(400).json({
+        ok: false,
+        error: "checkout_token_expired"
+      });
+    }
+
+    return res.json({
+      ok: true,
+      resetToken: link.resetToken
+    });
+  } catch (err) {
+    console.error("❌ RESOLVE CHECKOUT ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "resolve_checkout_error"
+    });
+  }
+});
 export default router;
