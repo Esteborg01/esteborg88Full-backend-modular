@@ -24,26 +24,41 @@ function normalizeEmail(email) {
 }
 
 function getModules(user) {
-  if (Array.isArray(user.modulesAllowed)) return user.modulesAllowed;
-  if (Array.isArray(user.modules)) return user.modules;
+  if (Array.isArray(user?.modulesAllowed)) return user.modulesAllowed;
+  if (Array.isArray(user?.modules)) return user.modules;
   return [];
 }
 
 function getPlan(user) {
-  return user.plan || "free";
+  return user?.plan || "free";
 }
 
 function getVipExpiresAt(user) {
-  return user.vipExpiresAt || null;
+  return user?.vipExpiresAt || null;
+}
+
+function sanitizeUser(user) {
+  return {
+    email: user?.email || "",
+    plan: getPlan(user),
+    modulesAllowed: getModules(user),
+    modules: getModules(user),
+    vipExpiresAt: getVipExpiresAt(user),
+    status: user?.status || null,
+    emailVerified: !!user?.emailVerified,
+  };
 }
 
 function signAccessToken(user) {
+  const userId = String(user?._id || "");
+
   return jwt.sign(
     {
-      uid: String(user._id),
-      email: user.email,
+      sub: userId, // ✅ el middleware VIP espera sub
+      uid: userId, // ✅ compatibilidad con lógica vieja
+      email: user?.email || "",
       modules: getModules(user),
-      plan: getPlan(user)
+      plan: getPlan(user),
     },
     JWT_SECRET,
     { expiresIn: "7d" }
@@ -53,7 +68,9 @@ function signAccessToken(user) {
 function parseTokenFromRequest(req) {
   const auth = req.headers.authorization || "";
   if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
+
   if (req.query?.token) return String(req.query.token).trim();
+
   return null;
 }
 
@@ -61,24 +78,25 @@ async function sendResetEmail({ email, resetLink }) {
   const response = await resend.emails.send({
     from: process.env.EMAIL_FROM,
     to: email,
-    subject: "Recuperación de contraseña",
+    subject: "Crea o restablece tu contraseña Esteborg",
     html: `
       <div style="background:#0b0b0f;padding:40px;font-family:Arial,sans-serif;color:#ffffff">
-        <h2 style="color:#d4af37;margin:0 0 20px 0;">Recuperación de contraseña</h2>
-        <p style="font-size:16px;line-height:1.5;margin:0 0 20px 0;">
-          Haz clic en el botón para crear una nueva contraseña.
+        <h2 style="color:#d4af37;margin:0 0 20px 0;">Acceso Esteborg VIP</h2>
+
+        <p style="font-size:16px;line-height:1.5;margin:0 0 14px 0;">
+          Haz clic en el botón para crear o restablecer tu contraseña.
         </p>
+
         <a href="${resetLink}"
-           style="display:inline-block;margin-top:12px;padding:14px 24px;
-                  background:#d4af37;color:#000000;border-radius:10px;
-                  text-decoration:none;font-weight:bold;">
-          Resetear contraseña
+           style="display:inline-block;margin-top:12px;padding:14px 24px;background:#d4af37;color:#000000;border-radius:10px;text-decoration:none;font-weight:bold;">
+          Crear mi contraseña
         </a>
+
         <p style="margin-top:24px;color:#aaaaaa;font-size:14px;">
           Este link expira en 15 minutos.
         </p>
       </div>
-    `
+    `,
   });
 
   console.log("📨 RESET EMAIL RESPONSE:", response);
@@ -94,21 +112,20 @@ async function sendPasswordChangedEmail({ email }) {
   const response = await resend.emails.send({
     from: process.env.EMAIL_FROM,
     to: email,
-    subject: "Tu contraseña fue modificada",
+    subject: "Tu contraseña de Esteborg fue modificada",
     html: `
       <div style="background:#0b0b0f;padding:40px;font-family:Arial,sans-serif;color:#ffffff">
         <h2 style="color:#d4af37;margin:0 0 20px 0;">Cambio de contraseña</h2>
+
         <p style="font-size:16px;line-height:1.5;margin:0 0 14px 0;">
           La contraseña de tu cuenta Esteborg VIP se modificó exitosamente.
         </p>
-        <p style="font-size:15px;line-height:1.5;color:#cccccc;margin:0 0 14px 0;">
-          Si fuiste tú, no necesitas hacer nada.
-        </p>
+
         <p style="font-size:15px;line-height:1.5;color:#cccccc;margin:0;">
-          Si no reconoces este cambio, recupera de inmediato tu acceso.
+          Si no reconoces este cambio, usa de inmediato la recuperación de acceso.
         </p>
       </div>
-    `
+    `,
   });
 
   console.log("📨 PASSWORD CHANGED EMAIL RESPONSE:", response);
@@ -126,6 +143,10 @@ async function sendPasswordChangedEmail({ email }) {
 
 router.post("/login", async (req, res) => {
   try {
+    if (!JWT_SECRET) {
+      return res.status(500).json({ ok: false, error: "jwt_secret_missing" });
+    }
+
     const users = usersCollection(req);
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || "");
@@ -135,7 +156,7 @@ router.post("/login", async (req, res) => {
     }
 
     const user = await users.findOne({
-      email: { $regex: new RegExp(`^${email}$`, "i") }
+      email: { $regex: new RegExp(`^${email}$`, "i") },
     });
 
     if (!user) {
@@ -159,12 +180,7 @@ router.post("/login", async (req, res) => {
     return res.json({
       ok: true,
       token,
-      user: {
-        email: user.email,
-        plan: getPlan(user),
-        modules: getModules(user),
-        vipExpiresAt: getVipExpiresAt(user)
-      }
+      user: sanitizeUser(user),
     });
   } catch (err) {
     console.error("❌ LOGIN ERROR:", err);
@@ -178,6 +194,10 @@ router.post("/login", async (req, res) => {
 
 router.get("/me", async (req, res) => {
   try {
+    if (!JWT_SECRET) {
+      return res.status(500).json({ ok: false, error: "jwt_secret_missing" });
+    }
+
     const token = parseTokenFromRequest(req);
 
     if (!token) {
@@ -185,9 +205,14 @@ router.get("/me", async (req, res) => {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
-    const users = usersCollection(req);
+    const userId = decoded?.sub || decoded?.uid || "";
 
-    const user = await users.findOne({ _id: new ObjectId(decoded.uid) });
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: "invalid_token_payload" });
+    }
+
+    const users = usersCollection(req);
+    const user = await users.findOne({ _id: new ObjectId(userId) });
 
     if (!user) {
       return res.status(404).json({ ok: false, error: "user_not_found" });
@@ -195,14 +220,7 @@ router.get("/me", async (req, res) => {
 
     return res.json({
       ok: true,
-      user: {
-        email: user.email,
-        plan: getPlan(user),
-        modulesAllowed: getModules(user),
-        vipExpiresAt: getVipExpiresAt(user),
-        status: user.status || null,
-        emailVerified: !!user.emailVerified
-      }
+      user: sanitizeUser(user),
     });
   } catch (err) {
     console.error("❌ ME ERROR:", err);
@@ -226,11 +244,12 @@ router.post("/forgot", async (req, res) => {
     }
 
     const user = await users.findOne({
-      email: { $regex: new RegExp(`^${email}$`, "i") }
+      email: { $regex: new RegExp(`^${email}$`, "i") },
     });
 
+    // Por seguridad, no revelamos si existe o no
     if (!user) {
-      console.log("❌ USER NOT FOUND:", email);
+      console.log("⚠️ USER NOT FOUND FOR FORGOT:", email);
       return res.json({ ok: true });
     }
 
@@ -240,7 +259,7 @@ router.post("/forgot", async (req, res) => {
     }
 
     const resetToken = crypto.randomBytes(32).toString("hex");
-    const resetTokenExpires = Date.now() + 1000 * 60 * 15;
+    const resetTokenExpires = Date.now() + 1000 * 60 * 15; // 15 min
 
     await users.updateOne(
       { _id: user._id },
@@ -248,12 +267,13 @@ router.post("/forgot", async (req, res) => {
         $set: {
           resetToken,
           resetTokenExpires,
-          updatedAt: new Date()
-        }
+          updatedAt: new Date(),
+        },
       }
     );
 
-    const resetLink = `${APP_URL}/?token=${resetToken}#reset`;
+    // ✅ En formato hash para Carrd SPA
+    const resetLink = `${APP_URL}/#reset?token=${encodeURIComponent(resetToken)}`;
 
     await sendResetEmail({ email, resetLink });
 
@@ -270,6 +290,10 @@ router.post("/forgot", async (req, res) => {
 
 router.post("/reset", async (req, res) => {
   try {
+    if (!JWT_SECRET) {
+      return res.status(500).json({ ok: false, error: "jwt_secret_missing" });
+    }
+
     const users = usersCollection(req);
     const token = String(req.body?.token || "").trim();
     const password = String(req.body?.password || "");
@@ -292,7 +316,7 @@ router.post("/reset", async (req, res) => {
 
     const user = await users.findOne({
       resetToken: token,
-      resetTokenExpires: { $gt: Date.now() }
+      resetTokenExpires: { $gt: Date.now() },
     });
 
     if (!user) {
@@ -307,12 +331,12 @@ router.post("/reset", async (req, res) => {
         $set: {
           passwordHash: hash,
           password: hash,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         },
         $unset: {
           resetToken: "",
-          resetTokenExpires: ""
-        }
+          resetTokenExpires: "",
+        },
       }
     );
 
@@ -328,12 +352,7 @@ router.post("/reset", async (req, res) => {
     return res.json({
       ok: true,
       token: accessToken,
-      user: {
-        email: freshUser.email,
-        plan: getPlan(freshUser),
-        modules: getModules(freshUser),
-        vipExpiresAt: getVipExpiresAt(freshUser)
-      }
+      user: sanitizeUser(freshUser),
     });
   } catch (err) {
     console.error("❌ RESET ERROR:", err);
@@ -344,6 +363,7 @@ router.post("/reset", async (req, res) => {
 // ==============================
 // POST-PAGO -> RESOLVE RESET TOKEN
 // ==============================
+
 router.get("/resolve-checkout", async (req, res) => {
   try {
     const checkoutToken = String(req.query?.ct || "").trim();
@@ -365,7 +385,7 @@ router.get("/resolve-checkout", async (req, res) => {
 
     return res.json({
       ok: true,
-      resetToken: link.resetToken
+      resetToken: link.resetToken,
     });
   } catch (err) {
     console.error("❌ RESOLVE CHECKOUT ERROR:", err);
