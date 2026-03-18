@@ -5,7 +5,6 @@ import crypto from "crypto";
 const router = express.Router();
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
 const APP_URL = process.env.APP_URL;
 
 function getPriceMap() {
