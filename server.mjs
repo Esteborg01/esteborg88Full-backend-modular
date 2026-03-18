@@ -3,24 +3,19 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 
-// ROUTES
-import authRoutes from "./src/routes/authRoutes.mjs";
-import stripeWebhook from "./src/routes/stripeWebhook.mjs";
-
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 10000;
 
 // =============================
 // CONFIG
 // =============================
 
-const PORT = process.env.PORT || 10000;
-
 const MONGO_URI = process.env.MONGO_URI;
 
 // =============================
-// CORS (para Carrd)
+// CORS
 // =============================
 
 app.use(cors({
@@ -32,24 +27,13 @@ app.use(cors({
 }));
 
 // =============================
-// STRIPE WEBHOOK (RAW BODY)
-// ⚠️ VA ANTES DE express.json()
-// =============================
-
-app.use(
-  "/api/stripe/webhook",
-  express.raw({ type: "application/json" }),
-  stripeWebhook
-);
-
-// =============================
-// JSON PARSER
+// BODY PARSER
 // =============================
 
 app.use(express.json());
 
 // =============================
-// DEBUG ROUTES (para no volvernos locos)
+// LOG REQUESTS
 // =============================
 
 app.use((req, res, next) => {
@@ -58,14 +42,73 @@ app.use((req, res, next) => {
 });
 
 // =============================
-// ROUTES
+// IMPORTS MODULARES (FORZADOS)
 // =============================
 
-// 🔥 ESTA ES LA LÍNEA CLAVE
-app.use("/api/auth", authRoutes);
+let authRoutes, iavipRoutes, comunicaRoutes, ventasRoutes, erpevRoutes;
+
+try {
+  authRoutes = (await import("./src/routes/authRoutes.mjs")).default;
+  console.log("✅ authRoutes cargado");
+} catch (e) {
+  console.error("❌ authRoutes ERROR:", e.message);
+}
+
+try {
+  iavipRoutes = (await import("./src/modules/iavipcomRoutes.mjs")).default;
+  console.log("✅ iavipRoutes cargado");
+} catch (e) {
+  console.error("❌ iavipRoutes ERROR:", e.message);
+}
+
+try {
+  comunicaRoutes = (await import("./src/modules/comunicaRoutes.mjs")).default;
+  console.log("✅ comunicaRoutes cargado");
+} catch (e) {
+  console.error("❌ comunicaRoutes ERROR:", e.message);
+}
+
+try {
+  ventasRoutes = (await import("./src/modules/ventasRoutes.mjs")).default;
+  console.log("✅ ventasRoutes cargado");
+} catch (e) {
+  console.error("❌ ventasRoutes ERROR:", e.message);
+}
+
+try {
+  erpevRoutes = (await import("./src/modules/erpevRoutes.mjs")).default;
+  console.log("✅ erpevRoutes cargado");
+} catch (e) {
+  console.error("❌ erpevRoutes ERROR:", e.message);
+}
 
 // =============================
-// HEALTH CHECK
+// MONTAJE
+// =============================
+
+if (authRoutes) app.use("/api/auth", authRoutes);
+if (iavipRoutes) app.use("/api/iavipcom", iavipRoutes);
+if (comunicaRoutes) app.use("/api/comunica", comunicaRoutes);
+if (ventasRoutes) app.use("/api/ventas", ventasRoutes);
+if (erpevRoutes) app.use("/api/erpev", erpevRoutes);
+
+// =============================
+// DEBUG
+// =============================
+
+app.get("/__debug", (req, res) => {
+  res.json({
+    auth: !!authRoutes,
+    iavip: !!iavipRoutes,
+    comunica: !!comunicaRoutes,
+    ventas: !!ventasRoutes,
+    erpev: !!erpevRoutes,
+    time: new Date()
+  });
+});
+
+// =============================
+// ROOT
 // =============================
 
 app.get("/", (req, res) => {
@@ -73,7 +116,7 @@ app.get("/", (req, res) => {
 });
 
 // =============================
-// 404 HANDLER
+// 404
 // =============================
 
 app.use((req, res) => {
@@ -85,7 +128,7 @@ app.use((req, res) => {
 });
 
 // =============================
-// START SERVER + MONGO
+// START
 // =============================
 
 async function start() {
@@ -94,18 +137,16 @@ async function start() {
     await client.connect();
 
     const db = client.db();
-
     app.locals.db = db;
 
-    console.log("✅ Mongo connected");
+    console.log("✅ Mongo conectado");
 
     app.listen(PORT, () => {
-      console.log(`🚀 Esteborg backend running on port ${PORT}`);
-      console.log(`🔥 Auth ready at /api/auth`);
+      console.log(`🚀 Server corriendo en ${PORT}`);
     });
 
   } catch (err) {
-    console.error("❌ Mongo connection error:", err);
+    console.error("❌ Mongo error:", err);
     process.exit(1);
   }
 }
