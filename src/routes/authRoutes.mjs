@@ -2,165 +2,209 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import { Resend } from "resend";
+import { MongoClient } from "mongodb";
 
 const router = express.Router();
 
+// ==============================
+// CONFIG
+// ==============================
+const resend = new Resend(process.env.RESEND_API_KEY);
 const JWT_SECRET = process.env.JWT_SECRET;
-const APP_BASE_URL = process.env.APP_BASE_URL;
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_FROM = process.env.EMAIL_FROM;
+const APP_URL = process.env.APP_URL; // 👈 CLAVE
 
-// =============================
-// HELPERS
-// =============================
+// ==============================
+// DB
+// ==============================
+const client = new MongoClient(process.env.MONGO_URI);
+let usersCollection;
 
-function signToken(user) {
-  return jwt.sign(
-    {
-      userId: user._id.toString(),
-      email: user.email
-    },
-    JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+async function connectDB() {
+  if (!usersCollection) {
+    await client.connect();
+    const db = client.db("esteborg");
+    usersCollection = db.collection("users");
+    console.log("✅ Mongo connected (authRoutes)");
+  }
 }
 
-function generateResetToken() {
-  return crypto.randomBytes(32).toString("hex");
-}
-
-async function sendEmail({ to, subject, html }) {
-  const r = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      from: EMAIL_FROM,
-      to,
-      subject,
-      html
-    })
-  });
-
-  const data = await r.json().catch(() => ({}));
-  console.log("[RESEND]", data);
-
-  if (!r.ok) throw new Error("email_error");
-}
-
-// =============================
-// LOGIN
-// =============================
-
-router.post("/login", async (req, res) => {
+// ==============================
+// REGISTER
+// ==============================
+router.post("/register", async (req, res) => {
   try {
+    await connectDB();
+
     const { email, password } = req.body;
-    const users = req.app.locals.db.collection("users");
 
-    const user = await users.findOne({ email: email.toLowerCase() });
+    const existing = await usersCollection.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ ok: false, error: "user_exists" });
+    }
 
-    if (!user) return res.status(404).json({ error: "user_not_found" });
+    const hash = await bcrypt.hash(password, 10);
 
-    const hash = user.passwordHash || user.password;
+    await usersCollection.insertOne({
+      email,
+      password: hash,
+      createdAt: new Date(),
+      modules: [], // 👈 se llenará por Stripe
+      plan: "free"
+    });
 
-    if (!hash) return res.status(403).json({ error: "password_not_set" });
+    return res.json({ ok: true });
 
-    const valid = await bcrypt.compare(password, hash);
-
-    if (!valid) return res.status(401).json({ error: "invalid_credentials" });
-
-    const token = signToken(user);
-
-    res.json({ ok: true, token });
-
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "server_error" });
+  } catch (err) {
+    console.error("❌ REGISTER ERROR:", err);
+    res.status(500).json({ ok: false });
   }
 });
 
-// =============================
-// FORGOT
-// =============================
+// ==============================
+// LOGIN
+// ==============================
+router.post("/login", async (req, res) => {
+  try {
+    await connectDB();
 
+    const { email, password } = req.body;
+
+    const user = await usersCollection.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ ok: false });
+    }
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      return res.status(401).json({ ok: false });
+    }
+
+    const token = jwt.sign(
+      {
+        uid: user._id,
+        email: user.email,
+        modules: user.modules || [],
+        plan: user.plan || "free"
+      },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    return res.json({
+      ok: true,
+      token,
+      user: {
+        email: user.email,
+        modules: user.modules || [],
+        plan: user.plan || "free"
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ LOGIN ERROR:", err);
+    res.status(500).json({ ok: false });
+  }
+});
+
+// ==============================
+// FORGOT PASSWORD
+// ==============================
 router.post("/forgot", async (req, res) => {
   try {
+    await connectDB();
+
     const { email } = req.body;
-    const users = req.app.locals.db.collection("users");
 
-    const user = await users.findOne({ email: email.toLowerCase() });
+    console.log("[FORGOT] Request for:", email);
 
-    if (!user) return res.status(404).json({ error: "user_not_found" });
+    const user = await usersCollection.findOne({ email });
 
-    const token = generateResetToken();
+    // 🔒 no revelar si existe
+    if (!user) {
+      return res.json({ ok: true });
+    }
 
-    await users.updateOne(
+    const token = crypto.randomBytes(32).toString("hex");
+
+    await usersCollection.updateOne(
       { _id: user._id },
       {
         $set: {
           resetToken: token,
-          resetTokenExpires: Date.now() + 1000 * 60 * 30
+          resetTokenExpires: Date.now() + 1000 * 60 * 15 // 15 min
         }
       }
     );
 
-    const link = `${APP_BASE_URL}/#reset?token=${token}`;
+    // 👇 LINK CORRECTO
+    const resetLink = `${APP_URL}/#reset?token=${token}`;
 
-    await sendEmail({
+    // 👇 EMAIL PRO (como tu imagen)
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM,
       to: email,
-      subject: "Recupera tu acceso",
-      html: `<a href="${link}">Reset password</a>`
+      subject: "Recuperación de contraseña",
+      html: `
+        <div style="background:#0b0b0f;padding:40px;font-family:Arial;color:#fff">
+          <h2 style="color:#d4af37;">Recuperación de contraseña</h2>
+          <p>Haz clic en el botón para crear una nueva contraseña.</p>
+          
+          <a href="${resetLink}" 
+             style="display:inline-block;margin-top:20px;padding:14px 24px;
+                    background:#d4af37;color:#000;border-radius:10px;
+                    text-decoration:none;font-weight:bold;">
+            Resetear contraseña
+          </a>
+
+          <p style="margin-top:20px;color:#aaa;">
+            Este link expira en 15 minutos.
+          </p>
+        </div>
+      `
     });
 
-    res.json({ ok: true });
+    return res.json({ ok: true });
 
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "forgot_error" });
+  } catch (err) {
+    console.error("❌ FORGOT ERROR:", err);
+    res.status(500).json({ ok: false });
   }
 });
 
-// =============================
-// RESET
-// =============================
-
+// ==============================
+// RESET PASSWORD
+// ==============================
 router.post("/reset", async (req, res) => {
   try {
-    const { token, password } = req.body;
-    const users = req.app.locals.db.collection("users");
+    await connectDB();
 
-    const user = await users.findOne({
+    const { token, password } = req.body;
+
+    const user = await usersCollection.findOne({
       resetToken: token,
       resetTokenExpires: { $gt: Date.now() }
     });
 
-    if (!user) return res.status(400).json({ error: "invalid_token" });
+    if (!user) {
+      return res.status(400).json({ ok: false, error: "invalid_token" });
+    }
 
     const hash = await bcrypt.hash(password, 10);
 
-    await users.updateOne(
+    await usersCollection.updateOne(
       { _id: user._id },
       {
-        $set: {
-          passwordHash: hash,
-          password: hash
-        },
-        $unset: {
-          resetToken: "",
-          resetTokenExpires: ""
-        }
+        $set: { password: hash },
+        $unset: { resetToken: "", resetTokenExpires: "" }
       }
     );
 
-    const newToken = signToken(user);
+    return res.json({ ok: true });
 
-    res.json({ ok: true, token: newToken });
-
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "reset_error" });
+  } catch (err) {
+    console.error("❌ RESET ERROR:", err);
+    res.status(500).json({ ok: false });
   }
 });
 
