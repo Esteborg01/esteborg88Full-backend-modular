@@ -52,14 +52,8 @@ function signAccessToken(user) {
 
 function parseTokenFromRequest(req) {
   const auth = req.headers.authorization || "";
-  if (auth.startsWith("Bearer ")) {
-    return auth.slice(7).trim();
-  }
-
-  if (req.query?.token) {
-    return String(req.query.token).trim();
-  }
-
+  if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
+  if (req.query?.token) return String(req.query.token).trim();
   return null;
 }
 
@@ -74,14 +68,12 @@ async function sendResetEmail({ email, resetLink }) {
         <p style="font-size:16px;line-height:1.5;margin:0 0 20px 0;">
           Haz clic en el botón para crear una nueva contraseña.
         </p>
-
         <a href="${resetLink}"
            style="display:inline-block;margin-top:12px;padding:14px 24px;
                   background:#d4af37;color:#000000;border-radius:10px;
                   text-decoration:none;font-weight:bold;">
           Resetear contraseña
         </a>
-
         <p style="margin-top:24px;color:#aaaaaa;font-size:14px;">
           Este link expira en 15 minutos.
         </p>
@@ -107,13 +99,13 @@ async function sendPasswordChangedEmail({ email }) {
       <div style="background:#0b0b0f;padding:40px;font-family:Arial,sans-serif;color:#ffffff">
         <h2 style="color:#d4af37;margin:0 0 20px 0;">Cambio de contraseña</h2>
         <p style="font-size:16px;line-height:1.5;margin:0 0 14px 0;">
-          Te avisamos que la contraseña de tu cuenta Esteborg VIP se modificó exitosamente.
+          La contraseña de tu cuenta Esteborg VIP se modificó exitosamente.
         </p>
         <p style="font-size:15px;line-height:1.5;color:#cccccc;margin:0 0 14px 0;">
           Si fuiste tú, no necesitas hacer nada.
         </p>
         <p style="font-size:15px;line-height:1.5;color:#cccccc;margin:0;">
-          Si no reconoces este cambio, entra de inmediato a recuperar tu acceso.
+          Si no reconoces este cambio, recupera de inmediato tu acceso.
         </p>
       </div>
     `
@@ -139,10 +131,7 @@ router.post("/login", async (req, res) => {
     const password = String(req.body?.password || "");
 
     if (!email || !password) {
-      return res.status(400).json({
-        ok: false,
-        error: "missing_fields"
-      });
+      return res.status(400).json({ ok: false, error: "missing_fields" });
     }
 
     const user = await users.findOne({
@@ -150,28 +139,19 @@ router.post("/login", async (req, res) => {
     });
 
     if (!user) {
-      return res.status(401).json({
-        ok: false,
-        error: "invalid_credentials"
-      });
+      return res.status(401).json({ ok: false, error: "invalid_credentials" });
     }
 
     const hash = user.passwordHash || user.password || null;
 
     if (!hash) {
-      return res.status(403).json({
-        ok: false,
-        error: "password_not_set"
-      });
+      return res.status(403).json({ ok: false, error: "password_not_set" });
     }
 
     const valid = await bcrypt.compare(password, hash);
 
     if (!valid) {
-      return res.status(401).json({
-        ok: false,
-        error: "invalid_credentials"
-      });
+      return res.status(401).json({ ok: false, error: "invalid_credentials" });
     }
 
     const token = signAccessToken(user);
@@ -188,10 +168,7 @@ router.post("/login", async (req, res) => {
     });
   } catch (err) {
     console.error("❌ LOGIN ERROR:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "server_error"
-    });
+    return res.status(500).json({ ok: false, error: "server_error" });
   }
 });
 
@@ -204,10 +181,7 @@ router.get("/me", async (req, res) => {
     const token = parseTokenFromRequest(req);
 
     if (!token) {
-      return res.status(401).json({
-        ok: false,
-        error: "missing_token"
-      });
+      return res.status(401).json({ ok: false, error: "missing_token" });
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -216,10 +190,7 @@ router.get("/me", async (req, res) => {
     const user = await users.findOne({ _id: new ObjectId(decoded.uid) });
 
     if (!user) {
-      return res.status(404).json({
-        ok: false,
-        error: "user_not_found"
-      });
+      return res.status(404).json({ ok: false, error: "user_not_found" });
     }
 
     return res.json({
@@ -235,10 +206,7 @@ router.get("/me", async (req, res) => {
     });
   } catch (err) {
     console.error("❌ ME ERROR:", err);
-    return res.status(401).json({
-      ok: false,
-      error: "invalid_token"
-    });
+    return res.status(401).json({ ok: false, error: "invalid_token" });
   }
 });
 
@@ -254,10 +222,7 @@ router.post("/forgot", async (req, res) => {
     console.log("[FORGOT] Request for:", email);
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        error: "missing_email"
-      });
+      return res.status(400).json({ ok: false, error: "missing_email" });
     }
 
     const user = await users.findOne({
@@ -271,10 +236,7 @@ router.post("/forgot", async (req, res) => {
 
     if (!APP_URL) {
       console.error("❌ APP_URL no definido");
-      return res.status(500).json({
-        ok: false,
-        error: "missing_app_url"
-      });
+      return res.status(500).json({ ok: false, error: "missing_app_url" });
     }
 
     const resetToken = crypto.randomBytes(32).toString("hex");
@@ -298,10 +260,7 @@ router.post("/forgot", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("❌ FORGOT ERROR:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "forgot_error"
-    });
+    return res.status(500).json({ ok: false, error: "forgot_error" });
   }
 });
 
@@ -316,17 +275,19 @@ router.post("/reset", async (req, res) => {
     const password = String(req.body?.password || "");
 
     if (!token || !password) {
-      return res.status(400).json({
-        ok: false,
-        error: "missing_fields"
-      });
+      return res.status(400).json({ ok: false, error: "missing_fields" });
     }
 
     if (password.length < 8) {
-      return res.status(400).json({
-        ok: false,
-        error: "password_too_short"
-      });
+      return res.status(400).json({ ok: false, error: "password_too_short" });
+    }
+
+    if (!/\d/.test(password)) {
+      return res.status(400).json({ ok: false, error: "password_missing_number" });
+    }
+
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      return res.status(400).json({ ok: false, error: "password_missing_special" });
     }
 
     const user = await users.findOne({
@@ -335,10 +296,7 @@ router.post("/reset", async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).json({
-        ok: false,
-        error: "invalid_token"
-      });
+      return res.status(400).json({ ok: false, error: "invalid_token" });
     }
 
     const hash = await bcrypt.hash(password, 10);
@@ -379,10 +337,7 @@ router.post("/reset", async (req, res) => {
     });
   } catch (err) {
     console.error("❌ RESET ERROR:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "reset_error"
-    });
+    return res.status(500).json({ ok: false, error: "reset_error" });
   }
 });
 
@@ -394,28 +349,18 @@ router.get("/resolve-checkout", async (req, res) => {
     const checkoutToken = String(req.query?.ct || "").trim();
 
     if (!checkoutToken) {
-      return res.status(400).json({
-        ok: false,
-        error: "missing_checkout_token"
-      });
+      return res.status(400).json({ ok: false, error: "missing_checkout_token" });
     }
 
     const checkoutLinks = req.app.locals.db.collection("checkout_links");
-
     const link = await checkoutLinks.findOne({ checkoutToken });
 
     if (!link) {
-      return res.status(404).json({
-        ok: false,
-        error: "checkout_token_not_found"
-      });
+      return res.status(404).json({ ok: false, error: "checkout_token_not_found" });
     }
 
     if (link.expiresAt && new Date(link.expiresAt).getTime() < Date.now()) {
-      return res.status(400).json({
-        ok: false,
-        error: "checkout_token_expired"
-      });
+      return res.status(400).json({ ok: false, error: "checkout_token_expired" });
     }
 
     return res.json({
@@ -424,10 +369,7 @@ router.get("/resolve-checkout", async (req, res) => {
     });
   } catch (err) {
     console.error("❌ RESOLVE CHECKOUT ERROR:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "resolve_checkout_error"
-    });
+    return res.status(500).json({ ok: false, error: "resolve_checkout_error" });
   }
 });
 
