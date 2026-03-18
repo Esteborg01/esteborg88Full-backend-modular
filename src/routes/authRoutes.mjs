@@ -89,10 +89,40 @@ async function sendResetEmail({ email, resetLink }) {
     `
   });
 
-  console.log("📨 RESEND RESPONSE:", response);
+  console.log("📨 RESET EMAIL RESPONSE:", response);
 
   if (response?.error) {
     throw new Error(`resend_error:${JSON.stringify(response.error)}`);
+  }
+
+  return response;
+}
+
+async function sendPasswordChangedEmail({ email }) {
+  const response = await resend.emails.send({
+    from: process.env.EMAIL_FROM,
+    to: email,
+    subject: "Tu contraseña fue modificada",
+    html: `
+      <div style="background:#0b0b0f;padding:40px;font-family:Arial,sans-serif;color:#ffffff">
+        <h2 style="color:#d4af37;margin:0 0 20px 0;">Cambio de contraseña</h2>
+        <p style="font-size:16px;line-height:1.5;margin:0 0 14px 0;">
+          Te avisamos que la contraseña de tu cuenta Esteborg VIP se modificó exitosamente.
+        </p>
+        <p style="font-size:15px;line-height:1.5;color:#cccccc;margin:0 0 14px 0;">
+          Si fuiste tú, no necesitas hacer nada.
+        </p>
+        <p style="font-size:15px;line-height:1.5;color:#cccccc;margin:0;">
+          Si no reconoces este cambio, entra de inmediato a recuperar tu acceso.
+        </p>
+      </div>
+    `
+  });
+
+  console.log("📨 PASSWORD CHANGED EMAIL RESPONSE:", response);
+
+  if (response?.error) {
+    throw new Error(`password_changed_email_error:${JSON.stringify(response.error)}`);
   }
 
   return response;
@@ -239,8 +269,6 @@ router.post("/forgot", async (req, res) => {
       return res.json({ ok: true });
     }
 
-    console.log("✅ USER FOUND:", user.email);
-
     if (!APP_URL) {
       console.error("❌ APP_URL no definido");
       return res.status(500).json({
@@ -263,9 +291,8 @@ router.post("/forgot", async (req, res) => {
       }
     );
 
-    const resetLink = `${APP_URL}/#reset?token=${resetToken}`;
+    const resetLink = `${APP_URL}/?token=${resetToken}#reset`;
 
-    console.log("🚀 ENVIANDO RESET A:", email);
     await sendResetEmail({ email, resetLink });
 
     return res.json({ ok: true });
@@ -330,6 +357,12 @@ router.post("/reset", async (req, res) => {
         }
       }
     );
+
+    try {
+      await sendPasswordChangedEmail({ email: user.email });
+    } catch (mailErr) {
+      console.error("❌ PASSWORD CHANGED EMAIL ERROR:", mailErr);
+    }
 
     const freshUser = await users.findOne({ _id: user._id });
     const accessToken = signAccessToken(freshUser);
@@ -397,4 +430,5 @@ router.get("/resolve-checkout", async (req, res) => {
     });
   }
 });
+
 export default router;
