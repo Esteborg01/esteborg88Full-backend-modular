@@ -42,41 +42,41 @@ app.use((req, res, next) => {
 });
 
 // =============================
-// IMPORTS CORRECTOS (MODULAR)
+// IMPORTS CORRECTOS (YA EN /src)
 // =============================
 
 let authRoutes, iavipRoutes, comunicaRoutes, ventasRoutes, erpevRoutes;
 
 try {
-  authRoutes = (await import("./src/routes/authRoutes.mjs")).default;
+  authRoutes = (await import("./routes/authRoutes.mjs")).default;
   console.log("✅ authRoutes cargado");
 } catch (e) {
   console.error("❌ authRoutes ERROR:", e.message);
 }
 
 try {
-  iavipRoutes = (await import("./src/modules/iavipcom/iavipcomRoutes.mjs")).default;
+  iavipRoutes = (await import("./modules/iavipcom/iavipcomRoutes.mjs")).default;
   console.log("✅ iavipRoutes cargado");
 } catch (e) {
   console.error("❌ iavipRoutes ERROR:", e.message);
 }
 
 try {
-  comunicaRoutes = (await import("./src/modules/comunica/comunicaRoutes.mjs")).default;
+  comunicaRoutes = (await import("./modules/comunica/comunicaRoutes.mjs")).default;
   console.log("✅ comunicaRoutes cargado");
 } catch (e) {
   console.error("❌ comunicaRoutes ERROR:", e.message);
 }
 
 try {
-  ventasRoutes = (await import("./src/modules/ventas/ventasRoutes.mjs")).default;
+  ventasRoutes = (await import("./modules/ventas/ventasRoutes.mjs")).default;
   console.log("✅ ventasRoutes cargado");
 } catch (e) {
   console.error("❌ ventasRoutes ERROR:", e.message);
 }
 
 try {
-  erpevRoutes = (await import("./src/modules/erpev/erpevRoutes.mjs")).default;
+  erpevRoutes = (await import("./modules/erpev/erpevRoutes.mjs")).default;
   console.log("✅ erpevRoutes cargado");
 } catch (e) {
   console.error("❌ erpevRoutes ERROR:", e.message);
@@ -93,7 +93,7 @@ if (ventasRoutes) app.use("/api/ventas", ventasRoutes);
 if (erpevRoutes) app.use("/api/erpev", erpevRoutes);
 
 // =============================
-// DEBUG
+// DEBUG ENDPOINT
 // =============================
 
 app.get("/__debug", (req, res) => {
@@ -128,7 +128,7 @@ app.use((req, res) => {
 });
 
 // =============================
-// START SERVER
+// START SERVER + MONGO
 // =============================
 
 async function start() {
