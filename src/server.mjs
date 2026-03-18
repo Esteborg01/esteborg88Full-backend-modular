@@ -3,6 +3,21 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 
+import { openai } from "./config/openaiClient.mjs";
+
+import authRoutes from "./routes/authRoutes.mjs";
+import healthRoutes from "./routes/healthRoutes.mjs";
+import billingRoutes from "./routes/billingRoutes.mjs";
+import { stripeWebhookHandler } from "./routes/stripeWebhook.mjs";
+
+import { registerEsteborgFullRoutes } from "./modules/esteborgFullRoutes.mjs";
+import { registerIaVipComRoutes } from "./modules/iavipcomRoutes.mjs";
+import { registerComunicaRoutes } from "./modules/comunicaRoutes.mjs";
+import { registerVentasRoutes } from "./modules/ventasRoutes.mjs";
+import { registerErpevRoutes } from "./modules/erpevRoutes.mjs";
+import { registerTokkenRoutes } from "./modules/tokkenRoutes.mjs";
+import { registerDemoRoutes } from "./modules/demoWelcomeRoutes.mjs";
+
 dotenv.config();
 
 const app = express();
@@ -15,14 +30,15 @@ const MONGO_URI = process.env.MONGO_URI;
 
 app.use(cors({
   origin: [
+    "https://membersvip.esteborg.live",
     "https://esteborg.live",
-    "https://membersvip.esteborg.live"
+    "https://www.esteborg.live"
   ],
   credentials: true
 }));
 
 // =============================
-// DEBUG REQUESTS
+// REQUEST LOG
 // =============================
 
 app.use((req, res, next) => {
@@ -31,156 +47,14 @@ app.use((req, res, next) => {
 });
 
 // =============================
-// DYNAMIC LOADS
+// STRIPE WEBHOOK RAW BODY
 // =============================
 
-let authRoutes = null;
-let healthRoutes = null;
-let billingRoutes = null;
-let stripeWebhookHandler = null;
-
-let registerEsteborgFullRoutes = null;
-let registerComunicaRoutes = null;
-let registerVentasRoutes = null;
-let registerErpevRoutes = null;
-let registerIaVipComRoutes = null;
-let registerTokkenRoutes = null;
-let registerDemoRoutes = null;
-
-let openai = null;
-
-try {
-  const openaiMod = await import("./config/openaiClient.mjs");
-  openai = openaiMod.openai || openaiMod.default || null;
-  console.log("✅ openaiClient cargado");
-} catch (e) {
-  console.error("❌ openaiClient ERROR:", e.message);
-}
-
-try {
-  const authMod = await import("./routes/authRoutes.mjs");
-  authRoutes = authMod.default || null;
-  console.log("✅ authRoutes cargado");
-} catch (e) {
-  console.error("❌ authRoutes ERROR:", e.message);
-}
-
-try {
-  const healthMod = await import("./routes/healthRoutes.mjs");
-  healthRoutes = healthMod.default || null;
-  console.log("✅ healthRoutes cargado");
-} catch (e) {
-  console.error("❌ healthRoutes ERROR:", e.message);
-}
-
-try {
-  const billingMod = await import("./routes/billingRoutes.mjs");
-  billingRoutes = billingMod.default || null;
-  console.log("✅ billingRoutes cargado");
-} catch (e) {
-  console.error("❌ billingRoutes ERROR:", e.message);
-}
-
-try {
-  const stripeMod = await import("./routes/stripeWebhook.mjs");
-  stripeWebhookHandler =
-    stripeMod.stripeWebhookHandler ||
-    stripeMod.default ||
-    null;
-  console.log("✅ stripeWebhook cargado");
-} catch (e) {
-  console.error("❌ stripeWebhook ERROR:", e.message);
-}
-
-try {
-  const mod = await import("./modules/esteborgFullRoutes.mjs");
-  registerEsteborgFullRoutes =
-    mod.registerEsteborgFullRoutes ||
-    mod.default ||
-    null;
-  console.log("✅ esteborgFullRoutes cargado");
-} catch (e) {
-  console.error("❌ esteborgFullRoutes ERROR:", e.message);
-}
-
-try {
-  const mod = await import("./modules/comunicaRoutes.mjs");
-  registerComunicaRoutes =
-    mod.registerComunicaRoutes ||
-    mod.default ||
-    null;
-  console.log("✅ comunicaRoutes cargado");
-} catch (e) {
-  console.error("❌ comunicaRoutes ERROR:", e.message);
-}
-
-try {
-  const mod = await import("./modules/ventasRoutes.mjs");
-  registerVentasRoutes =
-    mod.registerVentasRoutes ||
-    mod.default ||
-    null;
-  console.log("✅ ventasRoutes cargado");
-} catch (e) {
-  console.error("❌ ventasRoutes ERROR:", e.message);
-}
-
-try {
-  const mod = await import("./modules/erpevRoutes.mjs");
-  registerErpevRoutes =
-    mod.registerErpevRoutes ||
-    mod.default ||
-    null;
-  console.log("✅ erpevRoutes cargado");
-} catch (e) {
-  console.error("❌ erpevRoutes ERROR:", e.message);
-}
-
-try {
-  const mod = await import("./modules/iavipcomRoutes.mjs");
-  registerIaVipComRoutes =
-    mod.registerIaVipComRoutes ||
-    mod.default ||
-    null;
-  console.log("✅ iavipcomRoutes cargado");
-} catch (e) {
-  console.error("❌ iavipcomRoutes ERROR:", e.message);
-}
-
-try {
-  const mod = await import("./modules/tokkenRoutes.mjs");
-  registerTokkenRoutes =
-    mod.registerTokkenRoutes ||
-    mod.default ||
-    null;
-  console.log("✅ tokkenRoutes cargado");
-} catch (e) {
-  console.error("❌ tokkenRoutes ERROR:", e.message);
-}
-
-try {
-  const mod = await import("./modules/demoWelcomeRoutes.mjs");
-  registerDemoRoutes =
-    mod.registerDemoRoutes ||
-    mod.registerDemoWelcomeRoutes ||
-    mod.default ||
-    null;
-  console.log("✅ demoWelcomeRoutes cargado");
-} catch (e) {
-  console.error("❌ demoWelcomeRoutes ERROR:", e.message);
-}
-
-// =============================
-// STRIPE WEBHOOK FIRST
-// =============================
-
-if (stripeWebhookHandler) {
-  app.post(
-    "/api/stripe/webhook",
-    express.raw({ type: "application/json" }),
-    stripeWebhookHandler
-  );
-}
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhookHandler
+);
 
 // =============================
 // BODY PARSERS
@@ -190,22 +64,22 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // =============================
-// BASIC ROUTES
+// CORE ROUTES
 // =============================
 
-if (healthRoutes) app.use("/api", healthRoutes);
-if (authRoutes) app.use("/api/auth", authRoutes);
-if (billingRoutes) app.use("/api", billingRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api", healthRoutes);
+app.use("/api", billingRoutes);
 
 // =============================
-// MODULE REGISTRATION
+// MODULE ROUTES
 // =============================
 
 let flags = {
-  auth: !!authRoutes,
-  health: !!healthRoutes,
-  billing: !!billingRoutes,
-  stripe: !!stripeWebhookHandler,
+  auth: true,
+  health: true,
+  billing: true,
+  stripe: true,
   esteborgFull: false,
   iavip: false,
   comunica: false,
@@ -216,73 +90,59 @@ let flags = {
 };
 
 try {
-  if (typeof registerEsteborgFullRoutes === "function") {
-    registerEsteborgFullRoutes(app, openai);
-    flags.esteborgFull = true;
-    console.log("🔥 esteborgFullRoutes registrado");
-  }
+  registerEsteborgFullRoutes(app, openai);
+  flags.esteborgFull = true;
+  console.log("🔥 esteborgFullRoutes registrado");
 } catch (e) {
-  console.error("❌ esteborgFull register ERROR:", e.message);
+  console.error("❌ esteborgFullRoutes ERROR:", e.message);
 }
 
 try {
-  if (typeof registerIaVipComRoutes === "function") {
-    registerIaVipComRoutes(app, openai);
-    flags.iavip = true;
-    console.log("🔥 iavipcomRoutes registrado");
-  }
+  registerIaVipComRoutes(app, openai);
+  flags.iavip = true;
+  console.log("🔥 iavipcomRoutes registrado");
 } catch (e) {
-  console.error("❌ iavip register ERROR:", e.message);
+  console.error("❌ iavipcomRoutes ERROR:", e.message);
 }
 
 try {
-  if (typeof registerComunicaRoutes === "function") {
-    registerComunicaRoutes(app, openai);
-    flags.comunica = true;
-    console.log("🔥 comunicaRoutes registrado");
-  }
+  registerComunicaRoutes(app, openai);
+  flags.comunica = true;
+  console.log("🔥 comunicaRoutes registrado");
 } catch (e) {
-  console.error("❌ comunica register ERROR:", e.message);
+  console.error("❌ comunicaRoutes ERROR:", e.message);
 }
 
 try {
-  if (typeof registerVentasRoutes === "function") {
-    registerVentasRoutes(app, openai);
-    flags.ventas = true;
-    console.log("🔥 ventasRoutes registrado");
-  }
+  registerVentasRoutes(app, openai);
+  flags.ventas = true;
+  console.log("🔥 ventasRoutes registrado");
 } catch (e) {
-  console.error("❌ ventas register ERROR:", e.message);
+  console.error("❌ ventasRoutes ERROR:", e.message);
 }
 
 try {
-  if (typeof registerErpevRoutes === "function") {
-    registerErpevRoutes(app, openai);
-    flags.erpev = true;
-    console.log("🔥 erpevRoutes registrado");
-  }
+  registerErpevRoutes(app, openai);
+  flags.erpev = true;
+  console.log("🔥 erpevRoutes registrado");
 } catch (e) {
-  console.error("❌ erpev register ERROR:", e.message);
+  console.error("❌ erpevRoutes ERROR:", e.message);
 }
 
 try {
-  if (typeof registerTokkenRoutes === "function") {
-    registerTokkenRoutes(app, openai);
-    flags.tokken = true;
-    console.log("🔥 tokkenRoutes registrado");
-  }
+  registerTokkenRoutes(app, openai);
+  flags.tokken = true;
+  console.log("🔥 tokkenRoutes registrado");
 } catch (e) {
-  console.error("❌ tokken register ERROR:", e.message);
+  console.error("❌ tokkenRoutes ERROR:", e.message);
 }
 
 try {
-  if (typeof registerDemoRoutes === "function") {
-    registerDemoRoutes(app, openai);
-    flags.demo = true;
-    console.log("🔥 demoRoutes registrado");
-  }
+  registerDemoRoutes(app, openai);
+  flags.demo = true;
+  console.log("🔥 demoRoutes registrado");
 } catch (e) {
-  console.error("❌ demo register ERROR:", e.message);
+  console.error("❌ demoRoutes ERROR:", e.message);
 }
 
 // =============================
