@@ -7,20 +7,41 @@ const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const APP_URL = process.env.APP_URL;
 
+// ==============================
+// HELPERS
+// ==============================
+
 function getPriceMap() {
   try {
     return JSON.parse(process.env.STRIPE_PRICE_MAP || "{}");
-  } catch {
+  } catch (err) {
+    console.error("❌ STRIPE_PRICE_MAP inválido:", err);
     return {};
   }
 }
 
+function normalizePlan(plan) {
+  return String(plan || "").trim();
+}
+
+// ==============================
+// CREATE CHECKOUT
+// ==============================
+
 router.post("/billing/create-checkout", async (req, res) => {
   try {
-    const { plan } = req.body || {};
+    const plan = normalizePlan(req.body?.plan);
     const priceMap = getPriceMap();
 
+    if (!plan) {
+      return res.status(400).json({
+        ok: false,
+        error: "missing_plan"
+      });
+    }
+
     const priceId = priceMap[plan];
+
     if (!priceId) {
       return res.status(400).json({
         ok: false,
@@ -28,30 +49,50 @@ router.post("/billing/create-checkout", async (req, res) => {
       });
     }
 
+    if (!APP_URL) {
+      return res.status(500).json({
+        ok: false,
+        error: "missing_app_url"
+      });
+    }
+
     const checkoutToken = crypto.randomBytes(24).toString("hex");
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+
       line_items: [
         {
           price: priceId,
           quantity: 1
         }
       ],
+
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       customer_creation: "always",
-     success_url: `${APP_URL}/#postpago?ct=${checkoutToken}`,
-metadata: {
-  plan,
-  checkoutToken
-}
+
+      success_url: `${APP_URL}/#postpago?ct=${checkoutToken}`,
+      cancel_url: `${APP_URL}/#home`,
+
+      metadata: {
+        plan,
+        checkoutToken
+      }
+    });
+
+    console.log("✅ CHECKOUT SESSION OK:", {
+      plan,
+      priceId,
+      checkoutToken,
+      sessionId: session.id
     });
 
     return res.json({
       ok: true,
       url: session.url
     });
+
   } catch (err) {
     console.error("❌ CREATE CHECKOUT ERROR:", err);
     return res.status(500).json({
