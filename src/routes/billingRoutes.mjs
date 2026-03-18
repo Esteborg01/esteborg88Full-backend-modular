@@ -41,12 +41,11 @@ router.post("/billing/create-checkout", async (req, res) => {
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       customer_creation: "always",
-      success_url: `${APP_URL}/#postpago?ct=${checkoutToken}`,
-      cancel_url: `${APP_URL}/#home`,
-      metadata: {
-        plan,
-        checkoutToken
-      }
+     success_url: `${APP_URL}/#postpago?ct=${checkoutToken}`,
+metadata: {
+  plan,
+  checkoutToken
+}
     });
 
     return res.json({
