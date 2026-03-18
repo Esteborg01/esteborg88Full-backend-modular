@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { Resend } from "resend";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 const router = express.Router();
 
@@ -12,7 +12,7 @@ const router = express.Router();
 // ==============================
 const resend = new Resend(process.env.RESEND_API_KEY);
 const JWT_SECRET = process.env.JWT_SECRET;
-const APP_URL = process.env.APP_URL; // 👈 CLAVE
+const APP_URL = process.env.APP_URL;
 
 // ==============================
 // DB
@@ -48,16 +48,16 @@ router.post("/register", async (req, res) => {
     await usersCollection.insertOne({
       email,
       password: hash,
-      createdAt: new Date(),
-      modules: [], // 👈 se llenará por Stripe
-      plan: "free"
+      modules: [],
+      plan: "free",
+      createdAt: new Date()
     });
 
     return res.json({ ok: true });
 
   } catch (err) {
     console.error("❌ REGISTER ERROR:", err);
-    res.status(500).json({ ok: false });
+    return res.status(500).json({ ok: false });
   }
 });
 
@@ -103,7 +103,7 @@ router.post("/login", async (req, res) => {
 
   } catch (err) {
     console.error("❌ LOGIN ERROR:", err);
-    res.status(500).json({ ok: false });
+    return res.status(500).json({ ok: false });
   }
 });
 
@@ -132,16 +132,19 @@ router.post("/forgot", async (req, res) => {
       {
         $set: {
           resetToken: token,
-          resetTokenExpires: Date.now() + 1000 * 60 * 15 // 15 min
+          resetTokenExpires: Date.now() + 1000 * 60 * 15
         }
       }
     );
 
-    // 👇 LINK CORRECTO
+    if (!APP_URL) {
+      console.error("❌ APP_URL no definido");
+      return res.status(500).json({ ok: false, error: "missing_app_url" });
+    }
+
     const resetLink = `${APP_URL}/#reset?token=${token}`;
 
-    // 👇 EMAIL PRO (como tu imagen)
-    await resend.emails.send({
+    const response = await resend.emails.send({
       from: process.env.EMAIL_FROM,
       to: email,
       subject: "Recuperación de contraseña",
@@ -164,11 +167,18 @@ router.post("/forgot", async (req, res) => {
       `
     });
 
+    console.log("📨 RESEND RESPONSE:", response);
+
+    if (response?.error) {
+      console.error("❌ RESEND ERROR:", response.error);
+      return res.status(500).json({ ok: false, error: "email_failed" });
+    }
+
     return res.json({ ok: true });
 
   } catch (err) {
     console.error("❌ FORGOT ERROR:", err);
-    res.status(500).json({ ok: false });
+    return res.status(500).json({ ok: false });
   }
 });
 
@@ -196,7 +206,10 @@ router.post("/reset", async (req, res) => {
       { _id: user._id },
       {
         $set: { password: hash },
-        $unset: { resetToken: "", resetTokenExpires: "" }
+        $unset: {
+          resetToken: "",
+          resetTokenExpires: ""
+        }
       }
     );
 
@@ -204,7 +217,7 @@ router.post("/reset", async (req, res) => {
 
   } catch (err) {
     console.error("❌ RESET ERROR:", err);
-    res.status(500).json({ ok: false });
+    return res.status(500).json({ ok: false });
   }
 });
 
