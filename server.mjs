@@ -64,7 +64,7 @@ ROUTES
 ========================= */
 
 app.use("/api", healthRoutes);
-app.use("/api", authRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api", billingRoutes);
 
 /* =========================
