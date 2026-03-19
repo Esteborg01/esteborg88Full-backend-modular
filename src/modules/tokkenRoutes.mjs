@@ -6,7 +6,7 @@ import { generateTokkenForUser, validateTokken } from "../utils/tokken.mjs";
 const router = Router();
 
 // =============================
-// GENERAR TOKEN (YA EXISTENTE)
+// GENERAR TOKEN
 // =============================
 router.post("/generate-token", async (req, res) => {
   try {
@@ -31,7 +31,7 @@ router.post("/generate-token", async (req, res) => {
 
 
 // =============================
-// VALIDAR TOKEN (NUEVO PARA GPT)
+// VALIDAR TOKEN (GPT)
 // =============================
 router.post("/validate-token", async (req, res) => {
   try {
@@ -46,7 +46,7 @@ router.post("/validate-token", async (req, res) => {
 
     const result = validateTokken(token);
 
-    // Token inválido
+    // ❌ Token inválido
     if (result.status !== "valid") {
       return res.json({
         valid: false,
@@ -55,19 +55,74 @@ router.post("/validate-token", async (req, res) => {
       });
     }
 
-    const email = result.raw?.email || null;
+    const email = result.raw?.email;
 
-    // 🔥 AQUÍ PUEDES HACER LÓGICA REAL (fase 2)
-    // Por ahora: todo token válido tiene acceso a comunica
+    if (!email) {
+      return res.json({
+        valid: false,
+        error: "no_email_in_token"
+      });
+    }
 
-    const modulesAllowed = ["comunica"];
+    // 🔥 DB REAL
+    const db = req.app.locals.db;
+    const users = db.collection("users");
+
+    const user = await users.findOne({ email });
+
+    if (!user) {
+      return res.json({
+        valid: false,
+        error: "user_not_found"
+      });
+    }
+
+    // 🔥 EXPIRACIÓN
+    const expired = user.expiresAt && new Date() > new Date(user.expiresAt);
+
+    if (expired) {
+      return res.json({
+        valid: false,
+        expired: true,
+        plan: user.plan || null
+      });
+    }
+
+    // 🔥 MULTI-MÓDULO POR PLAN
+    let modulesAllowed = [];
+
+    switch (user.plan) {
+      case "comunica_basic":
+        modulesAllowed = ["comunica"];
+        break;
+
+      case "pro_comercial":
+        modulesAllowed = ["comunica", "ventas"];
+        break;
+
+      case "esteborg_full":
+        modulesAllowed = ["comunica", "ventas", "iavip", "erpev"];
+        break;
+
+      default:
+        modulesAllowed = user.modulesAllowed || [];
+    }
+
+    // 🔥 DÍAS RESTANTES
+    let daysLeft = null;
+    if (user.expiresAt) {
+      const diff = new Date(user.expiresAt) - new Date();
+      daysLeft = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    }
 
     return res.json({
       valid: true,
       expired: false,
-      email,
+      email: user.email,
+      plan: user.plan || null,
       modulesAllowed,
-      plan: "comunica_basic"
+      expiresAt: user.expiresAt || null,
+      daysLeft
     });
 
   } catch (err) {
@@ -82,12 +137,11 @@ router.post("/validate-token", async (req, res) => {
 
 
 // =============================
-// OPCIONAL PRO: DEBUG TOKEN
+// DEBUG OPCIONAL
 // =============================
 router.post("/debug-token", async (req, res) => {
   try {
     const { token } = req.body || {};
-
     const result = validateTokken(token);
 
     return res.json({
